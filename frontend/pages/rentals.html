@@ -1,0 +1,72 @@
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h2>Rentals / Deliveries</h2>
+        <button class="btn" onclick="showNewRentalForm()">+ New Rental</button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="table-container">
+        <table style="width:100%">
+            <thead>
+                <tr><th>Rental #</th><th>Customer</th><th>Equipment</th><th>Start Date</th><th>End Date</th><th>Subtotal</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="rentalsTableBody">
+                <tr><td colspan="8">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal for new rental -->
+<div id="rentalModal" class="modal">
+    <div class="modal-content" style="max-width: 600px; max-height: 80vh; overflow-y: auto;">
+        <div class="modal-header">
+            <h3>New Rental / Delivery</h3>
+            <span class="close" onclick="closeRentalModal()">&times;</span>
+        </div>
+        <form id="rentalForm">
+            <div class="form-group">
+                <label>Rental Number *</label>
+                <input type="text" id="rentalNumber" placeholder="ej: 2208" required>
+            </div>
+            <div class="form-group">
+                <label>Customer *</label>
+                <select id="rentalCustomerId" required></select>
+                <button type="button" class="btn-secondary" style="margin-top:5px;" onclick="showAddCustomerFromRental()">+ New Customer</button>
+            </div>
+            <div class="form-group">
+                <label>Equipment *</label>
+                <select id="rentalEquipmentId" required></select>
+            </div>
+            <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                    <label>Start Date *</label>
+                    <input type="date" id="rentalStartDate" required>
+                </div>
+                <div class="form-group">
+                    <label>End Date</label>
+                    <input type="date" id="rentalEndDate">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Delivery Date</label>
+                <input type="date" id="rentalDeliveryDate">
+            </div>
+            <div class="form-group">
+                <label>Accessories</label>
+                <div id="accessoriesList"></div>
+                <button type="button" class="btn-secondary" onclick="addAccessoryItem()">+ Add Accessory</button>
+            </div>
+            <div class="form-group">
+                <label>Notes</label>
+                <textarea id="rentalNotes" rows="3" placeholder="ej: TIV 4945 5-17-2023..."></textarea>
+            </div>
+            <div class="form-group">
+                <label>Customer Signature (print name)</label>
+                <input type="text" id="customerSignature" placeholder="Customer name">
+            </div>
+            <button type="button" class="btn" onclick="saveRental()">Generate Delivery</button>
+        </form>
+    </div>
+</div>

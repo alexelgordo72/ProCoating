@@ -1,0 +1,10 @@
+node_modules/
+.env
+*.env
+*.log
+*.bak*
+*.sql.gz
+*.dump
+backend/uploads/*
+!backend/uploads/.gitkeep
+.DS_Store

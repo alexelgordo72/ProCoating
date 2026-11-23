@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>ProCoating - Equipment Rental Management</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: #f0f2f5;
+            color: #1a1a2e;
+        }
+
+        /* Header */
+        .header {
+            background: #0a2b4e;
+            color: white;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo h1 {
+            font-size: 1.3rem;
+        }
+
+        .logo small {
+            font-size: 0.7rem;
+            opacity: 0.8;
+        }
+
+        .menu-btn {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            display: none;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            position: fixed;
+            left: 0;
+            top: 70px;
+            width: 260px;
+            height: calc(100% - 70px);
+            background: #16213e;
+            overflow-y: auto;
+            transition: left 0.3s ease;
+            z-index: 100;
+        }
+
+        .sidebar a {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 20px;
+            color: #ecf0f1;
+            text-decoration: none;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .sidebar a:hover {
+            background: #0f3460;
+        }
+
+        .sidebar a.active {
+            background: #0f3460;
+            border-left: 4px solid #e67e22;
+        }
+
+        /* Main Content */
+        .main {
+            margin-left: 260px;
+            padding: 20px;
+            min-height: calc(100vh - 70px);
+        }
+
+        /* Cards */
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .card h2, .card h3 {
+            margin-bottom: 1rem;
+            color: #0a2b4e;
+        }
+
+        /* Buttons */
+        .btn {
+            background: #e67e22;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background 0.2s;
+        }
+
+        .btn:hover {
+            background: #d35400;
+        }
+
+        .btn-secondary {
+            background: #3498db;
+        }
+
+        .btn-secondary:hover {
+            background: #2980b9;
+        }
+
+        .btn-danger {
+            background: #e74c3c;
+        }
+
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+
+        /* Forms */
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+
+        /* Tables */
+        .table-container {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+
+        /* Equipment Grid */
+        .equipment-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1rem;
+        }
+
+        .equipment-card {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 1rem;
+            border: 1px solid #e0e0e0;
+            transition: transform 0.2s;
+        }
+
+        .equipment-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .equipment-card h3 {
+            color: #0a2b4e;
+            margin-bottom: 0.5rem;
+        }
+
+        .rate {
+            display: inline-block;
+            background: #e67e22;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+
+        /* Status badges */
+        .status-available {
+            color: #27ae60;
+            font-weight: bold;
+        }
+
+        .status-active {
+            color: #e67e22;
+            font-weight: bold;
+        }
+
+        .status-completed {
+            color: #27ae60;
+            font-weight: bold;
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 550px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .close {
+            cursor: pointer;
+            font-size: 1.8rem;
+            color: #999;
+        }
+
+        .close:hover {
+            color: #333;
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .menu-btn {
+                display: block;
+            }
+
+            .sidebar {
+                left: -260px;
+            }
+
+            .sidebar.open {
+                left: 0;
+            }
+
+            .main {
+                margin-left: 0;
+            }
+
+            th, td {
+                display: block;
+            }
+
+            th {
+                display: none;
+            }
+
+            td {
+                display: flex;
+                justify-content: space-between;
+                padding: 8px;
+            }
+
+            td::before {
+                content: attr(data-label);
+                font-weight: bold;
+                width: 40%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">
+            <h1>ProCoating Treatments Inc.</h1>
+            <small>Equipment Rental & Service 24/7</small>
+        </div>
+        <button class="menu-btn" onclick="toggleSidebar()">☰</button>
+    </div>
+
+    <div class="sidebar" id="sidebar">
+        <a href="#" onclick="loadPage('dashboard')">📊 Dashboard</a>
+        <a href="#" onclick="loadPage('customers')">👥 Customers</a>
+        <a href="#" onclick="loadPage('equipment')">❄️ Equipment</a>
+        <a href="#" onclick="loadPage('rentals')">📄 Rentals / Delivery</a>
+    </div>
+
+    <div class="main" id="mainContent">
+        <div class="card">Loading...</div>
+    </div>
+
+    <script>
+        const API_BASE = `http://${window.location.hostname}:5000/api`;
+
+        async function loadPage(page) {
+            const content = document.getElementById('mainContent');
+            content.innerHTML = '<div class="card">Loading...</div>';
+            
+            if (page === 'dashboard') {
+                await loadDashboard();
+            } else if (page === 'customers') {
+                await loadCustomers();
+            } else if (page === 'equipment') {
+                await loadEquipment();
+            } else if (page === 'rentals') {
+                await loadRentals();
+            }
+            
+            document.querySelectorAll('.sidebar a').forEach(link => link.classList.remove('active'));
+            const activeLink = Array.from(document.querySelectorAll('.sidebar a')).find(link => link.textContent.includes(page === 'dashboard' ? 'Dashboard' : page === 'customers' ? 'Customers' : page === 'equipment' ? 'Equipment' : 'Rentals'));
+            if (activeLink) activeLink.classList.add('active');
+        }
+
+        async function loadDashboard() {
+            try {
+                const [customersRes, equipmentRes, rentalsRes] = await Promise.all([
+                    fetch(`${API_BASE}/customers`),
+                    fetch(`${API_BASE}/equipment`),
+                    fetch(`${API_BASE}/rentals`)
+                ]);
+                const customers = await customersRes.json();
+                const equipment = await equipmentRes.json();
+                const rentals = await rentalsRes.json();
+                
+                const activeRentals = Array.isArray(rentals) ? rentals.filter(r => r.status === 'active').length : 0;
+                const availableEquipment = Array.isArray(equipment) ? equipment.filter(e => e.status === 'available').length : 0;
+                
+                document.getElementById('mainContent').innerHTML = `
+                    <div class="stats-grid">
+                        <div class="card">
+                            <h3>Total Customers</h3>
+                            <p style="font-size: 2rem; font-weight: bold;">${Array.isArray(customers) ? customers.length : 0}</p>
+                        </div>
+                        <div class="card">
+                            <h3>Active Rentals</h3>
+                            <p style="font-size: 2rem; font-weight: bold;">${activeRentals}</p>
+                        </div>
+                        <div class="card">
+                            <h3>Available Equipment</h3>
+                            <p style="font-size: 2rem; font-weight: bold;">${availableEquipment}</p>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <h2>Welcome to ProCoating Management System</h2>
+                        <p>Manage your equipment rentals, customers, and work orders from this dashboard.</p>
+                        <p><strong>24/7 Emergency Service:</strong> Call (787) 604-4347 or (787) 309-8738</p>
+                        <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1rem;">
+                            <button class="btn" onclick="loadPage('rentals')">+ New Rental</button>
+                            <button class="btn btn-secondary" onclick="loadPage('customers')">Manage Customers</button>
+                            <button class="btn btn-secondary" onclick="loadPage('equipment')">View Equipment</button>
+                        </div>
+                    </div>
+                `;
+            } catch(e) {
+                document.getElementById('mainContent').innerHTML = `<div class="card">Error: ${e.message}</div>`;
+            }
+        }
+
+        async function loadCustomers() {
+            try {
+                const response = await fetch(`${API_BASE}/customers`);
+                const customers = await response.json();
+                document.getElementById('mainContent').innerHTML = `
+                    <div class="card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                            <h2>Customers</h2>
+                            <button class="btn" onclick="showAddCustomerModal()">+ New Customer</button>
+                        </div>
+                        <div class="table-container" style="margin-top: 1rem;">
+                            <table>
+                                <thead>
+                                    <tr><th>Name</th><th>Phone</th><th>Email</th><th>Actions</th></tr>
+                                </thead>
+                                <tbody>
+                                    ${Array.isArray(customers) && customers.length > 0 ? customers.map(c => `
+                                        <tr>
+                                            <td data-label="Name">${escapeHtml(c.name)}</td>
+                                            <td data-label="Phone">${escapeHtml(c.phone || '-')}</td>
+                                            <td data-label="Email">${escapeHtml(c.email || '-')}</td>
+                                            <td data-label="Actions"><button class="btn-danger" onclick="deleteCustomer(${c.id})">Delete</button></td>
+                                        </tr>
+                                    `).join('') : '<tr><td colspan="4" style="text-align:center">No customers found</td></tr>'}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div id="customerModal" class="modal">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h3>New Customer</h3>
+                                <span class="close" onclick="closeModal('customerModal')">&times;</span>
+                            </div>
+                            <div class="form-group">
+                                <label>Name *</label>
+                                <input type="text" id="custName" placeholder="Full name">
+                            </div>
+                            <div class="form-group">
+                                <label>Phone</label>
+                                <input type="text" id="custPhone" placeholder="(787) 123-4567">
+                            </div>
+                            <div class="form-group">
+                                <label>Email</label>
+                                <input type="email" id="custEmail" placeholder="customer@example.com">
+                            </div>
+                            <div class="form-group">
+                                <label>Address</label>
+                                <textarea id="custAddress" rows="2" placeholder="Full address"></textarea>
+                            </div>
+                            <button class="btn" onclick="addCustomer()">Save Customer</button>
+                        </div>
+                    </div>
+                `;
+            } catch(e) {
+                document.getElementById('mainContent').innerHTML = `<div class="card">Error loading customers: ${e.message}</div>`;
+            }
+        }
+
+        async function loadEquipment() {
+            try {
+                const response = await fetch(`${API_BASE}/equipment`);
+                const equipment = await response.json();
+                document.getElementById('mainContent').innerHTML = `
+                    <div class="card"><h2>Equipment Catalog</h2></div>
+                    <div class="equipment-grid">
+                        ${Array.isArray(equipment) && equipment.length > 0 ? equipment.map(e => `
+                            <div class="equipment-card">
+                                <h3>${escapeHtml(e.model)}</h3>
+                                <p>${e.tons} Tons | ${e.btu_h?.toLocaleString()} BTU/h</p>
+                                <p>Voltage: ${e.voltage}</p>
+                                <div class="rate">$${e.daily_rate}/day</div>
+                                <p>Status: <strong class="status-${e.status || 'available'}">${e.status || 'available'}</strong></p>
+                            </div>
+                        `).join('') : '<p>No equipment found</p>'}
+                    </div>
+                `;
+            } catch(e) {
+                document.getElementById('mainContent').innerHTML = `<div class="card">Error loading equipment: ${e.message}</div>`;
+            }
+        }
+
+        async function loadRentals() {
+            try {
+                const response = await fetch(`${API_BASE}/rentals`);
+                const rentals = await response.json();
+                document.getElementById('mainContent').innerHTML = `
+                    <div class="card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                            <h2>Rentals / Deliveries</h2>
+                            <button class="btn" onclick="showNewRentalForm()">+ New Rental</button>
+                        </div>
+                        <div class="table-container" style="margin-top: 1rem;">
+                            <table>
+                                <thead>
+                                    <tr><th>#</th><th>Customer</th><th>Equipment</th><th>Start</th><th>End</th><th>Total</th><th>Status</th><th>Actions</th></tr>
+                                </thead>
+                                <tbody>
+                                    ${Array.isArray(rentals) && rentals.length > 0 ? rentals.map(r => `
+                                        <tr>
+                                            <td data-label="#">${escapeHtml(r.rental_number)}</td>
+                                            <td data-label="Customer">${escapeHtml(r.customer_name)}</td>
+                                            <td data-label="Equipment">${escapeHtml(r.equipment_model)}</td>
+                                            <td data-label="Start">${new Date(r.start_date).toLocaleDateString()}</td>
+                                            <td data-label="End">${r.end_date ? new Date(r.end_date).toLocaleDateString() : '-'}</td>
+                                            <td data-label="Total">$${r.subtotal}</td>
+                                            <td data-label="Status"><span class="status-${r.status}">${r.status}</span></td>
+                                            <td data-label="Actions"><button class="btn-secondary" onclick="viewRental(${r.id})">View</button></td>
+                                        </tr>
+                                    `).join('') : '<tr><td colspan="8" style="text-align:center">No rentals found</td></tr>'}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div id="rentalModal" class="modal">
+                        <div class="modal-content" style="max-width: 600px;">
+                            <div class="modal-header">
+                                <h3>New Rental / Delivery</h3>
+                                <span class="close" onclick="closeModal('rentalModal')">&times;</span>
+                            </div>
+                            <div id="rentalFormContent"></div>
+                        </div>
+                    </div>
+                `;
+            } catch(e) {
+                document.getElementById('mainContent').innerHTML = `<div class="card">Error loading rentals: ${e.message}</div>`;
+            }
+        }
+
+        async function showNewRentalForm() {
+            try {
+                const [customersRes, equipmentRes] = await Promise.all([
+                    fetch(`${API_BASE}/customers`),
+                    fetch(`${API_BASE}/equipment`)
+                ]);
+                const customers = await customersRes.json();
+                const equipment = await equipmentRes.json();
+                
+                const rentalNumber = 'R' + Date.now().toString().slice(-6);
+                const today = new Date().toISOString().split('T')[0];
+                
+                document.getElementById('rentalFormContent').innerHTML = `
+                    <div class="form-group">
+                        <label>Rental Number *</label>
+                        <input type="text" id="rentalNumber" value="${rentalNumber}">
+                    </div>
+                    <div class="form-group">
+                        <label>Customer *</label>
+                        <select id="rentalCustomerId">
+                            <option value="">Select customer...</option>
+                            ${customers.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Equipment *</label>
+                        <select id="rentalEquipmentId">
+                            <option value="">Select equipment...</option>
+                            ${equipment.map(e => `<option value="${e.id}">${escapeHtml(e.model)} - $${e.daily_rate}/day</option>`).join('')}
+                        </select>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div class="form-group">
+                            <label>Start Date *</label>
+                            <input type="date" id="rentalStartDate" value="${today}">
+                        </div>
+                        <div class="form-group">
+                            <label>End Date</label>
+                            <input type="date" id="rentalEndDate">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Delivery Date</label>
+                        <input type="date" id="rentalDeliveryDate" value="${today}">
+                    </div>
+                    <div class="form-group">
+                        <label>Notes</label>
+                        <textarea id="rentalNotes" rows="2" placeholder="Any special notes..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Customer Signature (print name)</label>
+                        <input type="text" id="customerSignature" placeholder="Customer name">
+                    </div>
+                    <button class="btn" onclick="saveRental()">Generate Delivery</button>
+                `;
+                openModal('rentalModal');
+            } catch(e) {
+                alert('Error loading form: ' + e.message);
+            }
+        }
+
+        async function saveRental() {
+            const rentalData = {
+                rental_number: document.getElementById('rentalNumber').value,
+                customer_id: document.getElementById('rentalCustomerId').value,
+                equipment_id: document.getElementById('rentalEquipmentId').value,
+                start_date: document.getElementById('rentalStartDate').value,
+                end_date: document.getElementById('rentalEndDate').value || null,
+                delivery_date: document.getElementById('rentalDeliveryDate').value || null,
+                notes: document.getElementById('rentalNotes').value + '\nCustomer Signature: ' + document.getElementById('customerSignature').value,
+                accessories: []
+            };
+            
+            if (!rentalData.customer_id || !rentalData.equipment_id) {
+                alert('Please select customer and equipment');
+                return;
+            }
+            
+            if (!rentalData.start_date) {
+                alert('Please select start date');
+                return;
+            }
+            
+            const response = await fetch(`${API_BASE}/rentals`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(rentalData)
+            });
+            
+            if (response.ok) {
+                closeModal('rentalModal');
+                loadRentals();
+                alert('Rental created successfully!');
+            } else {
+                const error = await response.json();
+                alert('Error: ' + error.error);
+            }
+        }
+
+        async function addCustomer() {
+            const name = document.getElementById('custName').value;
+            if (!name) {
+                alert('Name is required');
+                return;
+            }
+            
+            const response = await fetch(`${API_BASE}/customers`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: name,
+                    phone: document.getElementById('custPhone').value,
+                    email: document.getElementById('custEmail').value,
+                    address: document.getElementById('custAddress').value
+                })
+            });
+            
+            if (response.ok) {
+                closeModal('customerModal');
+                loadCustomers();
+                alert('Customer added successfully');
+            } else {
+                alert('Error adding customer');
+            }
+        }
+
+        async function deleteCustomer(id) {
+            if (confirm('Are you sure you want to delete this customer?')) {
+                const response = await fetch(`${API_BASE}/customers/${id}`, { method: 'DELETE' });
+                if (response.ok) {
+                    loadCustomers();
+                } else {
+                    alert('Error deleting customer');
+                }
+            }
+        }
+
+        function showAddCustomerModal() {
+            document.getElementById('custName').value = '';
+            document.getElementById('custPhone').value = '';
+            document.getElementById('custEmail').value = '';
+            document.getElementById('custAddress').value = '';
+            openModal('customerModal');
+        }
+
+        function viewRental(id) {
+            alert('Rental details - Coming soon. ID: ' + id);
+        }
+
+        function openModal(modalId) {
+            document.getElementById(modalId).style.display = 'flex';
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('open');
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            });
+        }
+
+        // Load dashboard on start
+        loadPage('dashboard');
+    </script>
+</body>
+</html>

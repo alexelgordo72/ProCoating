@@ -1,0 +1,44 @@
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h2>Customers</h2>
+        <button class="btn" onclick="showNewCustomerModal()">+ New Customer</button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr><th>Name</th><th>Phone</th><th>Email</th><th>Address</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="customersTableBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal for new customer -->
+<div id="customerModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>New Customer</h3>
+            <span class="close" onclick="closeModal('customerModal')">&times;</span>
+        </div>
+        <div class="form-group">
+            <label>Name *</label>
+            <input type="text" id="customerName" placeholder="Full name">
+        </div>
+        <div class="form-group">
+            <label>Phone</label>
+            <input type="text" id="customerPhone" placeholder="(787) 123-4567">
+        </div>
+        <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="customerEmail" placeholder="customer@example.com">
+        </div>
+        <div class="form-group">
+            <label>Address</label>
+            <textarea id="customerAddress" rows="2" placeholder="Full address"></textarea>
+        </div>
+        <button class="btn" onclick="addCustomer()">Save Customer</button>
+    </div>
+</div>
