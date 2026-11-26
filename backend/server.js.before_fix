@@ -1,0 +1,1390 @@
+const express = require('express');
+const { Pool } = require('pg');
+const cors = require('cors');
+const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
+const crypto = require('crypto');
+
+const app = express();
+const PORT = 5000;
+const JWT_SECRET = 'procoating_secret';
+
+app.use(cors({ 
+    origin: ['http://192.168.80.10', 'http://10.147.20.1'], 
+    credentials: true 
+}));app.use(cookieParser());
+app.use(express.json());
+
+const pool = new Pool({
+    host: 'localhost',
+    port: 5432,
+    user: 'procoatuser',
+    password: 'Gonda0216*',
+    database: 'procoatingdb',
+});
+
+// ============ API ROUTES ============
+
+// Health
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'OK', message: 'API running' });
+});
+
+// Auth
+app.post('/api/auth/login', async (req, res) => {
+    const { username, password } = req.body;
+    const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+    if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid credentials' });
+    
+    const user = result.rows[0];
+    const hash = crypto.createHash('md5').update(password).digest('hex');
+    if (user.password !== hash) return res.status(401).json({ error: 'Invalid credentials' });
+    
+    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '24h' });
+    res.cookie('token', token, { httpOnly: true, maxAge: 24 * 60 * 60 * 1000 });
+    res.json({ success: true, user: { id: user.id, username: user.username } });
+});
+
+app.get('/api/auth/me', async (req, res) => {
+    const token = req.cookies.token;
+    if (!token) return res.status(401).json({ error: 'Not authenticated' });
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        res.json({ id: decoded.id, username: decoded.username, role: 'admin' });
+    } catch (err) {
+        res.status(401).json({ error: 'Invalid token' });
+    }
+});
+
+app.post('/api/auth/logout', (req, res) => {
+    res.clearCookie('token');
+    res.json({ success: true });
+});
+
+// Customers
+app.get('/api/customers', async (req, res) => {
+    const result = await pool.query('SELECT * FROM customers ORDER BY id');
+    res.json(result.rows);
+});
+
+app.post('/api/customers', async (req, res) => {
+    const { name, phone, email, address } = req.body;
+    const result = await pool.query(
+        'INSERT INTO customers (name, phone, email, address) VALUES ($1,$2,$3,$4) RETURNING *',
+        [name, phone, email, address]
+    );
+    res.json(result.rows[0]);
+});
+
+app.delete('/api/customers/:id', async (req, res) => {
+    await pool.query('DELETE FROM customers WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+});
+
+// Equipment
+app.get('/api/equipment', async (req, res) => {
+    const result = await pool.query('SELECT * FROM equipment ORDER BY id');
+    res.json(result.rows);
+});
+
+// Rentals
+app.get('/api/rentals', async (req, res) => {
+    const result = await pool.query(`
+        SELECT r.*, c.name as customer_name, e.model as equipment_model
+        FROM rentals r
+        JOIN customers c ON r.customer_id = c.id
+        JOIN equipment e ON r.equipment_id = e.id
+        ORDER BY r.id DESC
+    `);
+    res.json(result.rows);
+});
+
+app.post('/api/rentals', async (req, res) => {
+    const { rental_number, customer_id, equipment_id, start_date, end_date, notes } = req.body;
+    const start = new Date(start_date);
+    const end = end_date ? new Date(end_date) : null;
+    const total_days = end ? Math.ceil((end - start) / (1000*60*60*24)) : 1;
+    const equipRes = await pool.query('SELECT daily_rate FROM equipment WHERE id = $1', [equipment_id]);
+    const daily_rate = equipRes.rows[0]?.daily_rate || 0;
+    const subtotal = daily_rate * total_days;
+    const result = await pool.query(
+        `INSERT INTO rentals (rental_number, customer_id, equipment_id, start_date, end_date, total_days, subtotal, notes, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active') RETURNING *`,
+        [rental_number, customer_id, equipment_id, start_date, end_date, total_days, subtotal, notes]
+    );
+    res.json(result.rows[0]);
+});
+
+app.get('/api/rentals/:id/pdf', async (req, res) => {
+    const { id } = req.params;
+    const result = await pool.query(`
+        SELECT r.*, c.name as customer_name, e.model as equipment_model, e.tons
+        FROM rentals r
+        JOIN customers c ON r.customer_id = c.id
+        JOIN equipment e ON r.equipment_id = e.id
+        WHERE r.id = $1
+    `, [id]);
+    if (result.rows.length === 0) return res.status(404).send('Not found');
+    const r = result.rows[0];
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Delivery ${r.rental_number}</title><style>body{font-family:Arial;margin:40px;}.header{text-align:center;}.company{font-size:24px;font-weight:bold;color:#0a2b4e;}</style></head><body><div class="header"><div class="company">Pro-Coating Treatments Inc.</div><div>1498 Camino Los Gonzalez Apt 3, San Juan, PR 00926-8802</div><div>Tel (787) 604-4347 / (787) 309-8738</div></div><h2 style="text-align:center;">RENTAL EQUIPMENT DELIVERY</h2><p><strong>Customer:</strong> ${r.customer_name}</p><p><strong>Delivery #:</strong> ${r.rental_number}</p><p><strong>Date:</strong> ${new Date(r.start_date).toLocaleDateString()}</p><p><strong>Equipment:</strong> ${r.equipment_model}</p><p><strong>Total:</strong> $${r.subtotal}</p><div style="margin-top:50px;"><div style="float:left;width:45%;">Customer Signature: _________________</div><div style="float:right;width:45%;">ProCoating Rep: _________________</div></div></body></html>`;
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
+});
+
+// Work Orders
+app.get('/api/workorders', async (req, res) => {
+    const result = await pool.query(`
+        SELECT wo.*, c.name as customer_name, e.model as equipment_model
+        FROM work_orders wo
+        LEFT JOIN customers c ON wo.customer_id = c.id
+        LEFT JOIN equipment e ON wo.equipment_id = e.id
+        ORDER BY wo.id DESC
+    `);
+    res.json(result.rows);
+});
+
+// Get single work order
+app.get('/api/workorders/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query(`
+            SELECT wo.*, c.name as customer_name, e.model as equipment_model
+            FROM work_orders wo
+            LEFT JOIN customers c ON wo.customer_id = c.id
+            LEFT JOIN equipment e ON wo.equipment_id = e.id
+            WHERE wo.id = $1
+        `, [id]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Work order not found' });
+        }
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Create work order
+app.post('/api/workorders', async (req, res) => {
+    const { wo_number, customer_id, equipment_id, priority, reported_issue, is_warranty } = req.body;
+    const result = await pool.query(
+        `INSERT INTO work_orders (wo_number, customer_id, equipment_id, priority, reported_issue, is_warranty, status)
+         VALUES ($1,$2,$3,$4,$5,$6,'pending') RETURNING *`,
+        [wo_number, customer_id, equipment_id, priority || 'normal', reported_issue, is_warranty || false]
+    );
+    res.json(result.rows[0]);
+});
+
+// Update work order status
+app.put('/api/workorders/:id', async (req, res) => {
+    const { id } = req.params;
+    const { status, end_date } = req.body;
+    try {
+        const result = await pool.query(
+            `UPDATE work_orders SET status = $1, end_date = $2 WHERE id = $3 RETURNING *`,
+            [status, end_date, id]
+        );
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Inventory
+app.get('/api/spare-parts', async (req, res) => {
+    const result = await pool.query('SELECT * FROM spare_parts ORDER BY name');
+    res.json(result.rows);
+});
+
+// Suppliers
+app.get('/api/suppliers', async (req, res) => {
+    const result = await pool.query('SELECT * FROM suppliers ORDER BY name');
+    res.json(result.rows);
+});
+
+// Purchase Orders
+app.get('/api/purchase-orders', async (req, res) => {
+    const result = await pool.query(`
+        SELECT po.*, s.name as supplier_name
+        FROM purchase_orders po
+        LEFT JOIN suppliers s ON po.supplier_id = s.id
+        ORDER BY po.id DESC
+    `);
+    res.json(result.rows);
+});
+
+// ============ STATIC FILES ============
+app.use(express.static('/var/www/procoating'));
+
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+});
+
+// ============ WORK ORDER PHOTOS ============
+
+// Upload photo to work order
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+// Crear carpeta uploads si no existe
+if (!fs.existsSync('uploads')) {
+    fs.mkdirSync('uploads');
+}
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, 'uploads/');
+    },
+    filename: (req, file, cb) => {
+        const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, unique + path.extname(file.originalname));
+    }
+});
+const upload = multer({ storage });
+
+app.post('/api/workorders/:id/photos', upload.single('photo'), async (req, res) => {
+    const { id } = req.params;
+    const image_url = `/uploads/${req.file.filename}`;
+    const { description } = req.body;
+    
+    try {
+        const result = await pool.query(
+            'INSERT INTO work_order_photos (work_order_id, image_url, description) VALUES ($1, $2, $3) RETURNING *',
+            [id, image_url, description || '']
+        );
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get photos for a work order
+app.get('/api/workorders/:id/photos', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query(
+            'SELECT * FROM work_order_photos WHERE work_order_id = $1 ORDER BY id DESC',
+            [id]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Delete photo
+app.delete('/api/workorders/photos/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await pool.query('DELETE FROM work_order_photos WHERE id = $1', [id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============ WORK ORDER COSTS ============
+
+// Add cost to work order
+app.post('/api/workorders/:id/costs', async (req, res) => {
+    const { id } = req.params;
+    const { description, amount } = req.body;
+    try {
+        const result = await pool.query(
+            'INSERT INTO work_order_costs (work_order_id, description, amount) VALUES ($1, $2, $3) RETURNING *',
+            [id, description, amount]
+        );
+        
+        // Update total internal cost
+        await pool.query(
+            'UPDATE work_orders SET internal_cost = internal_cost + $1 WHERE id = $2',
+            [amount, id]
+        );
+        
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get costs for a work order
+app.get('/api/workorders/:id/costs', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query(
+            'SELECT * FROM work_order_costs WHERE work_order_id = $1 ORDER BY id',
+            [id]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Serve static files from uploads
+app.use('/uploads', express.static('uploads'));
+
+console.log('✅ Work Orders - Photos and Costs endpoints added');
+
+// ============ INVENTORY ============
+
+// Get all spare parts
+app.get('/api/spare-parts', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM spare_parts ORDER BY name');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get low stock items
+app.get('/api/spare-parts/low-stock', async (req, res) => {
+    try {
+        const result = await pool.query(
+            'SELECT * FROM spare_parts WHERE stock_quantity <= min_stock ORDER BY stock_quantity ASC'
+        );
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get single spare part
+app.get('/api/spare-parts/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query('SELECT * FROM spare_parts WHERE id = $1', [id]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Part not found' });
+        }
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Create spare part
+app.post('/api/spare-parts', async (req, res) => {
+    const { part_number, name, description, category, location, stock_quantity, min_stock, max_stock, unit_price } = req.body;
+    try {
+        const result = await pool.query(
+            `INSERT INTO spare_parts (part_number, name, description, category, location, stock_quantity, min_stock, max_stock, unit_price)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+            [part_number, name, description, category, location, stock_quantity || 0, min_stock || 5, max_stock || 100, unit_price || 0]
+        );
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Update spare part
+app.put('/api/spare-parts/:id', async (req, res) => {
+    const { id } = req.params;
+    const { part_number, name, description, category, location, stock_quantity, min_stock, max_stock, unit_price } = req.body;
+    try {
+        const result = await pool.query(
+            `UPDATE spare_parts 
+             SET part_number = COALESCE($1, part_number),
+                 name = COALESCE($2, name),
+                 description = COALESCE($3, description),
+                 category = COALESCE($4, category),
+                 location = COALESCE($5, location),
+                 stock_quantity = COALESCE($6, stock_quantity),
+                 min_stock = COALESCE($7, min_stock),
+                 max_stock = COALESCE($8, max_stock),
+                 unit_price = COALESCE($9, unit_price)
+             WHERE id = $10 RETURNING *`,
+            [part_number, name, description, category, location, stock_quantity, min_stock, max_stock, unit_price, id]
+        );
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Delete spare part
+app.delete('/api/spare-parts/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await pool.query('DELETE FROM spare_parts WHERE id = $1', [id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get inventory movements for a part
+app.get('/api/inventory-movements/:partId', async (req, res) => {
+    const { partId } = req.params;
+    try {
+        const result = await pool.query(
+            'SELECT * FROM inventory_movements WHERE part_id = $1 ORDER BY created_at DESC',
+            [partId]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Add inventory movement (stock in/out)
+app.post('/api/inventory-movements', async (req, res) => {
+    const { part_id, type, quantity, reason, work_order_id } = req.body;
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        
+        const result = await client.query(
+            `INSERT INTO inventory_movements (part_id, type, quantity, reason, work_order_id)
+             VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+            [part_id, type, quantity, reason, work_order_id]
+        );
+        
+        if (type === 'in') {
+            await client.query('UPDATE spare_parts SET stock_quantity = stock_quantity + $1 WHERE id = $2', [quantity, part_id]);
+        } else if (type === 'out') {
+            await client.query('UPDATE spare_parts SET stock_quantity = stock_quantity - $1 WHERE id = $2', [quantity, part_id]);
+        } else {
+            await client.query('UPDATE spare_parts SET stock_quantity = $1 WHERE id = $2', [quantity, part_id]);
+        }
+        
+        await client.query('COMMIT');
+        res.json(result.rows[0]);
+    } catch (err) {
+        await client.query('ROLLBACK');
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+console.log('✅ Inventory endpoints added');
+
+// ============ SUPPLIERS ============
+
+// Get all suppliers
+app.get('/api/suppliers', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM suppliers WHERE is_active = true ORDER BY name');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get single supplier
+app.get('/api/suppliers/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query('SELECT * FROM suppliers WHERE id = $1', [id]);
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Supplier not found' });
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Create supplier
+app.post('/api/suppliers', async (req, res) => {
+    const { name, contact_name, phone, email, address, tax_id, notes } = req.body;
+    try {
+        const result = await pool.query(
+            `INSERT INTO suppliers (name, contact_name, phone, email, address, tax_id, notes)
+             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+            [name, contact_name, phone, email, address, tax_id, notes]
+        );
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Update supplier
+app.put('/api/suppliers/:id', async (req, res) => {
+    const { id } = req.params;
+    const { name, contact_name, phone, email, address, tax_id, notes, is_active } = req.body;
+    try {
+        const result = await pool.query(
+            `UPDATE suppliers SET name=$1, contact_name=$2, phone=$3, email=$4, address=$5, tax_id=$6, notes=$7, is_active=$8 WHERE id=$9 RETURNING *`,
+            [name, contact_name, phone, email, address, tax_id, notes, is_active, id]
+        );
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============ PURCHASE ORDERS ============
+
+// Get all purchase orders
+app.get('/api/purchase-orders', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT po.*, s.name as supplier_name
+            FROM purchase_orders po
+            LEFT JOIN suppliers s ON po.supplier_id = s.id
+            ORDER BY po.id DESC
+        `);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get single purchase order with items
+app.get('/api/purchase-orders/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const poResult = await pool.query(`
+            SELECT po.*, s.name as supplier_name, s.contact_name, s.phone, s.email
+            FROM purchase_orders po
+            LEFT JOIN suppliers s ON po.supplier_id = s.id
+            WHERE po.id = $1
+        `, [id]);
+        
+        if (poResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Purchase order not found' });
+        }
+        
+        const itemsResult = await pool.query(`
+            SELECT poi.*, sp.part_number, sp.name as part_name, sp.unit_price as current_price
+            FROM purchase_order_items poi
+            JOIN spare_parts sp ON poi.spare_part_id = sp.id
+            WHERE poi.purchase_order_id = $1
+        `, [id]);
+        
+        res.json({
+            purchase_order: poResult.rows[0],
+            items: itemsResult.rows
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Create purchase order
+app.post('/api/purchase-orders', async (req, res) => {
+    const { po_number, supplier_id, order_date, expected_date, notes, items } = req.body;
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        
+        let subtotal = 0;
+        for (const item of items) {
+            subtotal += item.quantity_ordered * item.unit_price;
+        }
+        const total = subtotal;
+        
+        const poResult = await client.query(
+            `INSERT INTO purchase_orders (po_number, supplier_id, order_date, expected_date, subtotal, total, notes, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending') RETURNING *`,
+            [po_number, supplier_id, order_date, expected_date, subtotal, total, notes]
+        );
+        
+        const poId = poResult.rows[0].id;
+        
+        for (const item of items) {
+            await client.query(
+                `INSERT INTO purchase_order_items (purchase_order_id, spare_part_id, quantity_ordered, unit_price, total)
+                 VALUES ($1, $2, $3, $4, $5)`,
+                [poId, item.spare_part_id, item.quantity_ordered, item.unit_price, item.quantity_ordered * item.unit_price]
+            );
+        }
+        
+        await client.query('COMMIT');
+        res.json(poResult.rows[0]);
+    } catch (err) {
+        await client.query('ROLLBACK');
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+// Receive purchase order (update stock)
+app.post('/api/purchase-orders/:id/receive', async (req, res) => {
+    const { id } = req.params;
+    const { received_date, items } = req.body;
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        
+        for (const item of items) {
+            if (item.quantity_received > 0) {
+                await client.query(
+                    `UPDATE purchase_order_items 
+                     SET quantity_received = quantity_received + $1
+                     WHERE id = $2`,
+                    [item.quantity_received, item.id]
+                );
+                
+                await client.query(
+                    `UPDATE spare_parts 
+                     SET stock_quantity = stock_quantity + $1,
+                         last_restocked = $2
+                     WHERE id = $3`,
+                    [item.quantity_received, received_date, item.spare_part_id]
+                );
+                
+                await client.query(
+                    `INSERT INTO inventory_movements (part_id, type, quantity, reason, work_order_id)
+                     VALUES ($1, 'in', $2, $3, NULL)`,
+                    [item.spare_part_id, item.quantity_received, `Purchase Order #${id} received`]
+                );
+            }
+        }
+        
+        await client.query(
+            `UPDATE purchase_orders SET status = 'received', received_date = $1 WHERE id = $2`,
+            [received_date, id]
+        );
+        
+        await client.query('COMMIT');
+        res.json({ success: true });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+// Cancel purchase order
+app.put('/api/purchase-orders/:id/cancel', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query(
+            `UPDATE purchase_orders SET status = 'cancelled' WHERE id = $1 RETURNING *`,
+            [id]
+        );
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+console.log('✅ Purchase Orders endpoints added');
+
+// ============ REPORTS ============
+const ExcelJS = require('exceljs');
+
+// ============ REPORT: RENTALS (EXCEL) ============
+app.get('/api/reports/rentals/excel', async (req, res) => {
+    const { start_date, end_date } = req.query;
+    try {
+        let query = `
+            SELECT r.rental_number, c.name as customer_name, e.model as equipment_model,
+                   r.start_date, r.end_date, r.total_days, r.subtotal, r.status, r.created_at
+            FROM rentals r
+            JOIN customers c ON r.customer_id = c.id
+            JOIN equipment e ON r.equipment_id = e.id
+            WHERE 1=1
+        `;
+        const params = [];
+        
+        if (start_date) {
+            params.push(start_date);
+            query += ` AND r.start_date >= $${params.length}`;
+        }
+        if (end_date) {
+            params.push(end_date);
+            query += ` AND r.start_date <= $${params.length}`;
+        }
+        query += ` ORDER BY r.created_at DESC`;
+        
+        const result = await pool.query(query, params);
+        
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Rentals Report');
+        
+        worksheet.columns = [
+            { header: 'Rental #', key: 'rental_number', width: 15 },
+            { header: 'Customer', key: 'customer_name', width: 25 },
+            { header: 'Equipment', key: 'equipment_model', width: 25 },
+            { header: 'Start Date', key: 'start_date', width: 15 },
+            { header: 'End Date', key: 'end_date', width: 15 },
+            { header: 'Days', key: 'total_days', width: 10 },
+            { header: 'Subtotal', key: 'subtotal', width: 15 },
+            { header: 'Status', key: 'status', width: 12 },
+            { header: 'Created', key: 'created_at', width: 20 }
+        ];
+        
+        result.rows.forEach(row => {
+            worksheet.addRow({
+                rental_number: row.rental_number,
+                customer_name: row.customer_name,
+                equipment_model: row.equipment_model,
+                start_date: row.start_date ? new Date(row.start_date).toLocaleDateString() : '-',
+                end_date: row.end_date ? new Date(row.end_date).toLocaleDateString() : '-',
+                total_days: row.total_days,
+                subtotal: row.subtotal,
+                status: row.status,
+                created_at: new Date(row.created_at).toLocaleString()
+            });
+        });
+        
+        const total = result.rows.reduce((sum, r) => sum + (parseFloat(r.subtotal) || 0), 0);
+        worksheet.addRow({});
+        worksheet.addRow({ rental_number: 'TOTAL', subtotal: total });
+        
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename=rentals_report.xlsx');
+        
+        await workbook.xlsx.write(res);
+        res.end();
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============ REPORT: WORK ORDERS (EXCEL) ============
+app.get('/api/reports/workorders/excel', async (req, res) => {
+    const { start_date, end_date, status } = req.query;
+    try {
+        let query = `
+            SELECT wo.wo_number, c.name as customer_name, e.model as equipment_model,
+                   wo.priority, wo.status, wo.reported_issue, wo.diagnosis, wo.solution,
+                   wo.start_date, wo.end_date, wo.internal_cost, wo.is_warranty, wo.created_at
+            FROM work_orders wo
+            LEFT JOIN customers c ON wo.customer_id = c.id
+            LEFT JOIN equipment e ON wo.equipment_id = e.id
+            WHERE 1=1
+        `;
+        const params = [];
+        
+        if (start_date) {
+            params.push(start_date);
+            query += ` AND wo.start_date >= $${params.length}`;
+        }
+        if (end_date) {
+            params.push(end_date);
+            query += ` AND wo.start_date <= $${params.length}`;
+        }
+        if (status) {
+            params.push(status);
+            query += ` AND wo.status = $${params.length}`;
+        }
+        query += ` ORDER BY wo.created_at DESC`;
+        
+        const result = await pool.query(query, params);
+        
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Work Orders Report');
+        
+        worksheet.columns = [
+            { header: 'WO #', key: 'wo_number', width: 15 },
+            { header: 'Customer', key: 'customer_name', width: 25 },
+            { header: 'Equipment', key: 'equipment_model', width: 25 },
+            { header: 'Priority', key: 'priority', width: 12 },
+            { header: 'Status', key: 'status', width: 15 },
+            { header: 'Start Date', key: 'start_date', width: 15 },
+            { header: 'End Date', key: 'end_date', width: 15 },
+            { header: 'Internal Cost', key: 'internal_cost', width: 15 },
+            { header: 'Warranty', key: 'is_warranty', width: 10 },
+            { header: 'Created', key: 'created_at', width: 20 }
+        ];
+        
+        result.rows.forEach(row => {
+            worksheet.addRow({
+                wo_number: row.wo_number,
+                customer_name: row.customer_name || '-',
+                equipment_model: row.equipment_model || '-',
+                priority: row.priority,
+                status: row.status,
+                start_date: row.start_date ? new Date(row.start_date).toLocaleDateString() : '-',
+                end_date: row.end_date ? new Date(row.end_date).toLocaleDateString() : '-',
+                internal_cost: row.internal_cost,
+                is_warranty: row.is_warranty ? 'Yes' : 'No',
+                created_at: new Date(row.created_at).toLocaleString()
+            });
+        });
+        
+        const totalCost = result.rows.reduce((sum, r) => sum + (parseFloat(r.internal_cost) || 0), 0);
+        worksheet.addRow({});
+        worksheet.addRow({ wo_number: 'TOTAL INTERNAL COST', internal_cost: totalCost });
+        
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename=workorders_report.xlsx');
+        
+        await workbook.xlsx.write(res);
+        res.end();
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============ REPORT: INVENTORY (EXCEL) ============
+app.get('/api/reports/inventory/excel', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT part_number, name, category, location, stock_quantity, min_stock, max_stock, unit_price,
+                   CASE WHEN stock_quantity <= min_stock THEN 'Low Stock' ELSE 'OK' END as stock_status,
+                   created_at
+            FROM spare_parts
+            ORDER BY name
+        `);
+        
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Inventory Report');
+        
+        worksheet.columns = [
+            { header: 'Part #', key: 'part_number', width: 15 },
+            { header: 'Name', key: 'name', width: 30 },
+            { header: 'Category', key: 'category', width: 15 },
+            { header: 'Location', key: 'location', width: 20 },
+            { header: 'Stock', key: 'stock_quantity', width: 10 },
+            { header: 'Min Stock', key: 'min_stock', width: 10 },
+            { header: 'Max Stock', key: 'max_stock', width: 10 },
+            { header: 'Unit Price', key: 'unit_price', width: 12 },
+            { header: 'Status', key: 'stock_status', width: 12 }
+        ];
+        
+        result.rows.forEach(row => {
+            worksheet.addRow(row);
+        });
+        
+        const lowStockCount = result.rows.filter(r => r.stock_quantity <= r.min_stock).length;
+        worksheet.addRow({});
+        worksheet.addRow({ part_number: 'Low Stock Items', stock_quantity: lowStockCount });
+        
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename=inventory_report.xlsx');
+        
+        await workbook.xlsx.write(res);
+        res.end();
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============ REPORT: FINANCIAL (EXCEL) ============
+app.get('/api/reports/financial/excel', async (req, res) => {
+    const { year, month } = req.query;
+    try {
+        let query = `
+            SELECT 
+                DATE_TRUNC('month', r.start_date) as month,
+                COUNT(r.id) as rental_count,
+                COALESCE(SUM(r.subtotal), 0) as total_revenue,
+                COALESCE(SUM(wo.internal_cost), 0) as total_internal_cost
+            FROM rentals r
+            LEFT JOIN work_orders wo ON wo.customer_id = r.customer_id
+            WHERE r.status = 'active' OR r.status = 'completed'
+        `;
+        const params = [];
+        
+        if (year) {
+            params.push(year);
+            query += ` AND EXTRACT(YEAR FROM r.start_date) = $${params.length}`;
+        }
+        if (month) {
+            params.push(month);
+            query += ` AND EXTRACT(MONTH FROM r.start_date) = $${params.length}`;
+        }
+        query += ` GROUP BY DATE_TRUNC('month', r.start_date) ORDER BY month DESC`;
+        
+        const result = await pool.query(query, params);
+        
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Financial Report');
+        
+        worksheet.columns = [
+            { header: 'Month', key: 'month', width: 15 },
+            { header: 'Rental Count', key: 'rental_count', width: 15 },
+            { header: 'Total Revenue', key: 'total_revenue', width: 18 },
+            { header: 'Total Internal Cost', key: 'total_internal_cost', width: 18 },
+            { header: 'Net Profit', key: 'net_profit', width: 18 }
+        ];
+        
+        result.rows.forEach(row => {
+            const netProfit = (parseFloat(row.total_revenue) || 0) - (parseFloat(row.total_internal_cost) || 0);
+            worksheet.addRow({
+                month: row.month ? new Date(row.month).toLocaleDateString('en-US', { year: 'numeric', month: 'long' }) : '-',
+                rental_count: row.rental_count,
+                total_revenue: parseFloat(row.total_revenue) || 0,
+                total_internal_cost: parseFloat(row.total_internal_cost) || 0,
+                net_profit: netProfit
+            });
+        });
+        
+        const totalRevenue = result.rows.reduce((sum, r) => sum + (parseFloat(r.total_revenue) || 0), 0);
+        const totalCost = result.rows.reduce((sum, r) => sum + (parseFloat(r.total_internal_cost) || 0), 0);
+        const netProfit = totalRevenue - totalCost;
+        
+        worksheet.addRow({});
+        worksheet.addRow({ month: 'TOTAL REVENUE', total_revenue: totalRevenue });
+        worksheet.addRow({ month: 'TOTAL INTERNAL COST', total_internal_cost: totalCost });
+        worksheet.addRow({ month: 'NET PROFIT', net_profit: netProfit });
+        
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename=financial_report.xlsx');
+        
+        await workbook.xlsx.write(res);
+        res.end();
+    } catch (err) {
+        console.error('Financial report error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+console.log('✅ Reports endpoints added');
+
+// ============ CHARTS DATA ============
+
+// Get monthly rentals data for charts
+app.get('/api/charts/rentals-by-month', async (req, res) => {
+    const { year } = req.query;
+    const currentYear = year || new Date().getFullYear();
+    
+    try {
+        const result = await pool.query(`
+            SELECT 
+                EXTRACT(MONTH FROM start_date) as month,
+                COUNT(*) as rental_count,
+                COALESCE(SUM(subtotal), 0) as total_revenue
+            FROM rentals
+            WHERE EXTRACT(YEAR FROM start_date) = $1 AND status != 'cancelled'
+            GROUP BY EXTRACT(MONTH FROM start_date)
+            ORDER BY month ASC
+        `, [currentYear]);
+        
+        // Fill missing months with zeros
+        const monthlyData = Array(12).fill(0);
+        const revenueData = Array(12).fill(0);
+        
+        result.rows.forEach(row => {
+            const monthIndex = parseInt(row.month) - 1;
+            monthlyData[monthIndex] = parseInt(row.rental_count);
+            revenueData[monthIndex] = parseFloat(row.total_revenue);
+        });
+        
+        res.json({
+            year: currentYear,
+            months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+            rentals: monthlyData,
+            revenue: revenueData
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get work orders status distribution
+app.get('/api/charts/workorders-status', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT 
+                status,
+                COUNT(*) as count
+            FROM work_orders
+            GROUP BY status
+        `);
+        
+        const statusMap = {
+            'pending': 0,
+            'in_progress': 0,
+            'completed': 0
+        };
+        
+        result.rows.forEach(row => {
+            if (statusMap.hasOwnProperty(row.status)) {
+                statusMap[row.status] = parseInt(row.count);
+            }
+        });
+        
+        res.json({
+            labels: ['Pending', 'In Progress', 'Completed'],
+            data: [statusMap.pending, statusMap.in_progress, statusMap.completed]
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get low stock items count
+app.get('/api/charts/low-stock', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT COUNT(*) as count
+            FROM spare_parts
+            WHERE stock_quantity <= min_stock
+        `);
+        
+        const totalResult = await pool.query(`
+            SELECT COUNT(*) as total
+            FROM spare_parts
+        `);
+        
+        res.json({
+            low_stock: parseInt(result.rows[0].count),
+            total_parts: parseInt(totalResult.rows[0].total)
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+console.log('✅ Charts endpoints added');
+
+// ============ NOTIFICATIONS ============
+
+// Get all notifications
+app.get('/api/notifications', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT * FROM notifications 
+            ORDER BY created_at DESC 
+            LIMIT 50
+        `);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get unread count
+app.get('/api/notifications/unread-count', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT COUNT(*) as count FROM notifications WHERE is_read = false
+        `);
+        res.json({ count: parseInt(result.rows[0].count) });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Mark notification as read
+app.put('/api/notifications/:id/read', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await pool.query('UPDATE notifications SET is_read = true WHERE id = $1', [id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Mark all as read
+app.put('/api/notifications/read-all', async (req, res) => {
+    try {
+        await pool.query('UPDATE notifications SET is_read = true');
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Create notification (internal use)
+async function createNotification(type, title, message, link = null) {
+    try {
+        await pool.query(
+            'INSERT INTO notifications (type, title, message, link) VALUES ($1, $2, $3, $4)',
+            [type, title, message, link]
+        );
+    } catch (err) {
+        console.error('Error creating notification:', err);
+    }
+}
+
+// Check low stock and create notifications
+app.post('/api/notifications/check-low-stock', async (req, res) => {
+    try {
+        const lowStock = await pool.query(`
+            SELECT * FROM spare_parts WHERE stock_quantity <= min_stock
+        `);
+        
+        for (const part of lowStock.rows) {
+            await createNotification(
+                'low_stock',
+                '⚠️ Low Stock Alert',
+                `Part ${part.part_number} - ${part.name} has only ${part.stock_quantity} units left (min: ${part.min_stock})`,
+                '/inventory'
+            );
+        }
+        
+        res.json({ message: `Checked ${lowStock.rows.length} low stock items` });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+console.log('✅ Notifications endpoints added');
+
+// ============ PDF REPORTS ============
+
+// Configurar fuentes
+                { text: 'Rentals Report', style: 'subheader', fontSize: 14, alignment: 'center', margin: [0, 10, 0, 20] },
+                { text: `Period: ${start_date || 'All time'} to ${end_date || 'Present'}`, fontSize: 10, alignment: 'center', margin: [0, 0, 0, 20] },
+                {
+                    table: {
+                        headerRows: 1,
+                        widths: ['auto', '*', '*', 'auto', 'auto', 'auto'],
+                        body: [
+                            [{ text: '#', style: 'tableHeader' }, { text: 'Customer', style: 'tableHeader' }, 
+                             { text: 'Equipment', style: 'tableHeader' }, { text: 'Start', style: 'tableHeader' },
+                             { text: 'Days', style: 'tableHeader' }, { text: 'Total', style: 'tableHeader' }],
+                            ...result.rows.map((r, idx) => [
+                                r.rental_number,
+                                r.customer_name,
+                                r.equipment_model,
+                                new Date(r.start_date).toLocaleDateString(),
+                                r.total_days || '-',
+                                `$${r.subtotal}`
+                            ])
+                        ]
+                    }
+                },
+                { text: `\nTotal Revenue: $${total}`, style: 'total', alignment: 'right', margin: [0, 20, 0, 0] }
+            ],
+            styles: {
+                header: { fontSize: 18, bold: true },
+                subheader: { fontSize: 14, bold: true },
+                tableHeader: { bold: true, fillColor: '#f0f0f0' },
+                total: { fontSize: 12, bold: true }
+            }
+        };
+        
+        const pdfDoc = printer.createPdfKitDocument(docDefinition);
+        const chunks = [];
+        pdfDoc.on('data', (chunk) => chunks.push(chunk));
+        pdfDoc.on('end', () => {
+            const pdfBuffer = Buffer.concat(chunks);
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', 'attachment; filename=rentals_report.pdf');
+            res.send(pdfBuffer);
+        });
+        pdfDoc.end();
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// PDF: Work Orders Report
+app.get('/api/reports/workorders/pdf', async (req, res) => {
+    const { start_date, end_date, status } = req.query;
+    try {
+        let query = `
+            SELECT wo.wo_number, c.name as customer_name, e.model as equipment_model,
+                   wo.priority, wo.status, wo.start_date, wo.end_date, wo.internal_cost
+            FROM work_orders wo
+            LEFT JOIN customers c ON wo.customer_id = c.id
+            LEFT JOIN equipment e ON wo.equipment_id = e.id
+            WHERE 1=1
+        `;
+        const params = [];
+        
+        if (start_date) {
+            params.push(start_date);
+            query += ` AND wo.start_date >= $${params.length}`;
+        }
+        if (end_date) {
+            params.push(end_date);
+            query += ` AND wo.start_date <= $${params.length}`;
+        }
+        if (status) {
+            params.push(status);
+            query += ` AND wo.status = $${params.length}`;
+        }
+        query += ` ORDER BY wo.created_at DESC`;
+        
+        const result = await pool.query(query, params);
+        
+        const totalCost = result.rows.reduce((sum, r) => sum + (parseFloat(r.internal_cost) || 0), 0);
+        
+        const docDefinition = {
+            pageSize: 'LETTER',
+            pageMargins: [40, 60, 40, 60],
+            content: [
+                { text: 'Pro-Coating Treatments Inc.', style: 'header', fontSize: 18, bold: true, alignment: 'center' },
+                { text: 'Work Orders Report', style: 'subheader', fontSize: 14, alignment: 'center', margin: [0, 10, 0, 20] },
+                {
+                    table: {
+                        headerRows: 1,
+                        widths: ['auto', '*', '*', 'auto', 'auto', 'auto'],
+                        body: [
+                            [{ text: 'WO #', style: 'tableHeader' }, { text: 'Customer', style: 'tableHeader' }, 
+                             { text: 'Equipment', style: 'tableHeader' }, { text: 'Priority', style: 'tableHeader' },
+                             { text: 'Status', style: 'tableHeader' }, { text: 'Cost', style: 'tableHeader' }],
+                            ...result.rows.map(r => [
+                                r.wo_number,
+                                r.customer_name || '-',
+                                r.equipment_model || '-',
+                                r.priority,
+                                r.status,
+                                `$${r.internal_cost || 0}`
+                            ])
+                        ]
+                    }
+                },
+                { text: `\nTotal Internal Cost: $${totalCost}`, style: 'total', alignment: 'right', margin: [0, 20, 0, 0] }
+            ],
+            styles: {
+                header: { fontSize: 18, bold: true },
+                subheader: { fontSize: 14, bold: true },
+                tableHeader: { bold: true, fillColor: '#f0f0f0' },
+                total: { fontSize: 12, bold: true }
+            }
+        };
+        
+        const pdfDoc = printer.createPdfKitDocument(docDefinition);
+        const chunks = [];
+        pdfDoc.on('data', (chunk) => chunks.push(chunk));
+        pdfDoc.on('end', () => {
+            const pdfBuffer = Buffer.concat(chunks);
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', 'attachment; filename=workorders_report.pdf');
+            res.send(pdfBuffer);
+        });
+        pdfDoc.end();
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// PDF: Inventory Report
+app.get('/api/reports/inventory/pdf', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT part_number, name, category, location, stock_quantity, min_stock, unit_price,
+                   CASE WHEN stock_quantity <= min_stock THEN 'Low Stock' ELSE 'OK' END as stock_status
+            FROM spare_parts
+            ORDER BY name
+        `);
+        
+        const lowStockCount = result.rows.filter(r => r.stock_quantity <= r.min_stock).length;
+        
+        const docDefinition = {
+            pageSize: 'LETTER',
+            pageMargins: [40, 60, 40, 60],
+            content: [
+                { text: 'Pro-Coating Treatments Inc.', style: 'header', fontSize: 18, bold: true, alignment: 'center' },
+                { text: 'Inventory Report', style: 'subheader', fontSize: 14, alignment: 'center', margin: [0, 10, 0, 20] },
+                {
+                    table: {
+                        headerRows: 1,
+                        widths: ['auto', '*', 'auto', 'auto', 'auto', 'auto'],
+                        body: [
+                            [{ text: 'Part #', style: 'tableHeader' }, { text: 'Name', style: 'tableHeader' }, 
+                             { text: 'Stock', style: 'tableHeader' }, { text: 'Min', style: 'tableHeader' },
+                             { text: 'Price', style: 'tableHeader' }, { text: 'Status', style: 'tableHeader' }],
+                            ...result.rows.map(r => [
+                                r.part_number,
+                                r.name,
+                                r.stock_quantity,
+                                r.min_stock,
+                                `$${r.unit_price}`,
+                                r.stock_status
+                            ])
+                        ]
+                    }
+                },
+                { text: `\nLow Stock Items: ${lowStockCount}`, style: 'total', alignment: 'right', margin: [0, 20, 0, 0] }
+            ],
+            styles: {
+                header: { fontSize: 18, bold: true },
+                subheader: { fontSize: 14, bold: true },
+                tableHeader: { bold: true, fillColor: '#f0f0f0' },
+                total: { fontSize: 12, bold: true }
+            }
+        };
+        
+        const pdfDoc = printer.createPdfKitDocument(docDefinition);
+        const chunks = [];
+        pdfDoc.on('data', (chunk) => chunks.push(chunk));
+        pdfDoc.on('end', () => {
+            const pdfBuffer = Buffer.concat(chunks);
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', 'attachment; filename=inventory_report.pdf');
+            res.send(pdfBuffer);
+        });
+        pdfDoc.end();
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// PDF: Financial Report
+app.get('/api/reports/financial/pdf', async (req, res) => {
+    const { year, month } = req.query;
+    try {
+        let query = `
+            SELECT 
+                DATE_TRUNC('month', r.start_date) as month,
+                COUNT(r.id) as rental_count,
+                COALESCE(SUM(r.subtotal), 0) as total_revenue,
+                COALESCE(SUM(wo.internal_cost), 0) as total_internal_cost
+            FROM rentals r
+            LEFT JOIN work_orders wo ON wo.customer_id = r.customer_id
+            WHERE r.status = 'active' OR r.status = 'completed'
+        `;
+        const params = [];
+        
+        if (year) {
+            params.push(year);
+            query += ` AND EXTRACT(YEAR FROM r.start_date) = $${params.length}`;
+        }
+        if (month) {
+            params.push(month);
+            query += ` AND EXTRACT(MONTH FROM r.start_date) = $${params.length}`;
+        }
+        query += ` GROUP BY DATE_TRUNC('month', r.start_date) ORDER BY month DESC`;
+        
+        const result = await pool.query(query, params);
+        
+        const totalRevenue = result.rows.reduce((sum, r) => sum + (parseFloat(r.total_revenue) || 0), 0);
+        const totalCost = result.rows.reduce((sum, r) => sum + (parseFloat(r.total_internal_cost) || 0), 0);
+        const netProfit = totalRevenue - totalCost;
+        
+        const docDefinition = {
+            pageSize: 'LETTER',
+            pageMargins: [40, 60, 40, 60],
+            content: [
+                { text: 'Pro-Coating Treatments Inc.', style: 'header', fontSize: 18, bold: true, alignment: 'center' },
+                { text: 'Financial Report', style: 'subheader', fontSize: 14, alignment: 'center', margin: [0, 10, 0, 20] },
+                {
+                    table: {
+                        headerRows: 1,
+                        widths: ['auto', 'auto', 'auto', 'auto'],
+                        body: [
+                            [{ text: 'Month', style: 'tableHeader' }, { text: 'Rentals', style: 'tableHeader' }, 
+                             { text: 'Revenue', style: 'tableHeader' }, { text: 'Cost', style: 'tableHeader' }],
+                            ...result.rows.map(r => [
+                                r.month ? new Date(r.month).toLocaleDateString('en-US', { year: 'numeric', month: 'long' }) : '-',
+                                r.rental_count,
+                                `$${parseFloat(r.total_revenue) || 0}`,
+                                `$${parseFloat(r.total_internal_cost) || 0}`
+                            ])
+                        ]
+                    }
+                },
+                { text: `\nTotal Revenue: $${totalRevenue}`, style: 'total', alignment: 'right' },
+                { text: `Total Internal Cost: $${totalCost}`, style: 'total', alignment: 'right' },
+                { text: `Net Profit: $${netProfit}`, style: 'total', bold: true, alignment: 'right', margin: [0, 10, 0, 0] }
+            ],
+            styles: {
+                header: { fontSize: 18, bold: true },
+                subheader: { fontSize: 14, bold: true },
+                tableHeader: { bold: true, fillColor: '#f0f0f0' },
+                total: { fontSize: 12 }
+            }
+        };
+        
+        const pdfDoc = printer.createPdfKitDocument(docDefinition);
+        const chunks = [];
+        pdfDoc.on('data', (chunk) => chunks.push(chunk));
+        pdfDoc.on('end', () => {
+            const pdfBuffer = Buffer.concat(chunks);
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', 'attachment; filename=financial_report.pdf');
+            res.send(pdfBuffer);
+        });
+        pdfDoc.end();
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+console.log('✅ PDF Reports endpoints added');

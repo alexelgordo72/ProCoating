@@ -1,0 +1,392 @@
+const express = require('express');
+const { Pool } = require('pg');
+const cors = require('cors');
+const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
+const crypto = require('crypto');
+
+const app = express();
+const PORT = 5000;
+const JWT_SECRET = 'procoating_secret_key_2024';
+
+// CORS - configuración simple
+app.use(cors({
+    origin: 'http://192.168.80.10',
+    credentials: true
+}));
+
+app.use(cookieParser());
+app.use(express.json());
+app.use(express.static("/var/www/procoating"));
+
+const pool = new Pool({
+    host: 'localhost',
+    port: 5432,
+    user: 'procoatuser',
+    password: 'Gonda0216*',
+    database: 'procoatingdb',
+});
+
+// Health
+app.get('/api/health', (req, res) => {
+app.get("/login.html", (req, res) => { res.sendFile("/var/www/procoating/login.html"); });
+    res.json({ status: 'OK', message: 'API running' });
+});
+
+// ============ AUTH ============
+app.post('/api/auth/login', async (req, res) => {
+    const { username, password } = req.body;
+    console.log('Login attempt:', username);
+    
+    try {
+        const result = await pool.query(`
+            SELECT u.*, r.name as role_name 
+            FROM users u
+            JOIN roles r ON u.role_id = r.id
+            WHERE u.username = $1
+        `, [username]);
+        
+        if (result.rows.length === 0) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+        
+        const user = result.rows[0];
+        const hash = crypto.createHash('md5').update(password).digest('hex');
+        
+        if (user.password !== hash) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+        
+        const token = jwt.sign(
+            { id: user.id, username: user.username, role: user.role_name },
+            JWT_SECRET,
+            { expiresIn: '24h' }
+        );
+        
+        res.cookie('token', token, { 
+            httpOnly: true, 
+            maxAge: 24 * 60 * 60 * 1000,
+            sameSite: 'lax'
+        });
+        
+        res.json({ 
+            success: true, 
+            user: { 
+                id: user.id, 
+                username: user.username, 
+                full_name: user.full_name,
+                role: user.role_name 
+            } 
+        });
+    } catch (err) {
+        console.error('Login error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/auth/logout', (req, res) => {
+    res.clearCookie('token');
+    res.json({ success: true });
+});
+
+app.get('/api/auth/me', async (req, res) => {
+    const token = req.cookies.token;
+    if (!token) {
+        return res.status(401).json({ error: 'Not authenticated' });
+    }
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        res.json({ 
+            id: decoded.id, 
+            username: decoded.username, 
+            role: decoded.role 
+        });
+    } catch (err) {
+        res.status(401).json({ error: 'Invalid token' });
+    }
+});
+
+// ============ CUSTOMERS ============
+app.get('/api/customers', async (req, res) => {
+    const result = await pool.query('SELECT * FROM customers ORDER BY id');
+    res.json(result.rows);
+});
+
+app.post('/api/customers', async (req, res) => {
+    const { name, phone, email, address } = req.body;
+    const result = await pool.query(
+        'INSERT INTO customers (name, phone, email, address) VALUES ($1,$2,$3,$4) RETURNING *',
+        [name, phone, email, address]
+    );
+    res.json(result.rows[0]);
+});
+
+app.delete('/api/customers/:id', async (req, res) => {
+    await pool.query('DELETE FROM customers WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+});
+
+// ============ EQUIPMENT ============
+app.get('/api/equipment', async (req, res) => {
+    const result = await pool.query('SELECT * FROM equipment ORDER BY id');
+    res.json(result.rows);
+});
+
+// ============ RENTALS ============
+app.get('/api/rentals', async (req, res) => {
+    const result = await pool.query(`
+        SELECT r.*, c.name as customer_name, e.model as equipment_model
+        FROM rentals r
+        JOIN customers c ON r.customer_id = c.id
+        JOIN equipment e ON r.equipment_id = e.id
+        ORDER BY r.id DESC
+    `);
+    res.json(result.rows);
+});
+
+app.post('/api/rentals', async (req, res) => {
+    const { rental_number, customer_id, equipment_id, start_date, end_date, notes } = req.body;
+    const start = new Date(start_date);
+    const end = end_date ? new Date(end_date) : null;
+    const total_days = end ? Math.ceil((end - start) / (1000*60*60*24)) : 1;
+    const equipRes = await pool.query('SELECT daily_rate FROM equipment WHERE id = $1', [equipment_id]);
+    const daily_rate = equipRes.rows[0]?.daily_rate || 0;
+    const subtotal = daily_rate * total_days;
+    const result = await pool.query(
+        `INSERT INTO rentals (rental_number, customer_id, equipment_id, start_date, end_date, total_days, subtotal, notes, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active') RETURNING *`,
+        [rental_number, customer_id, equipment_id, start_date, end_date, total_days, subtotal, notes]
+    );
+    res.json(result.rows[0]);
+});
+
+// ============ WORK ORDERS ============
+app.get('/api/workorders', async (req, res) => {
+    const result = await pool.query('SELECT * FROM work_orders ORDER BY id DESC');
+    res.json(result.rows);
+});
+
+app.get('/api/workorders/:id', async (req, res) => {
+    const { id } = req.params;
+    const result = await pool.query('SELECT * FROM work_orders WHERE id = $1', [id]);
+    res.json(result.rows[0] || null);
+});
+
+app.post('/api/workorders', async (req, res) => {
+    const { wo_number, customer_id, equipment_id, priority, reported_issue, is_warranty } = req.body;
+    const result = await pool.query(
+        `INSERT INTO work_orders (wo_number, customer_id, equipment_id, priority, reported_issue, is_warranty, status)
+         VALUES ($1,$2,$3,$4,$5,$6,'pending') RETURNING *`,
+        [wo_number, customer_id, equipment_id, priority || 'normal', reported_issue, is_warranty || false]
+    );
+    res.json(result.rows[0]);
+});
+
+// ============ INVENTORY ============
+app.get('/api/spare-parts', async (req, res) => {
+    const result = await pool.query('SELECT * FROM spare_parts ORDER BY name');
+    res.json(result.rows);
+});
+
+// ============ SUPPLIERS ============
+app.get('/api/suppliers', async (req, res) => {
+    const result = await pool.query('SELECT * FROM suppliers ORDER BY name');
+    res.json(result.rows);
+});
+
+// ============ PURCHASE ORDERS ============
+app.get('/api/purchase-orders', async (req, res) => {
+    const result = await pool.query(`
+        SELECT po.*, s.name as supplier_name
+        FROM purchase_orders po
+        LEFT JOIN suppliers s ON po.supplier_id = s.id
+        ORDER BY po.id DESC
+    `);
+    res.json(result.rows);
+});
+
+// ============ PDF ============
+app.get('/api/rentals/:id/pdf', async (req, res) => {
+    const { id } = req.params;
+    const result = await pool.query(`
+        SELECT r.*, c.name as customer_name, e.model as equipment_model, e.tons
+        FROM rentals r
+        JOIN customers c ON r.customer_id = c.id
+        JOIN equipment e ON r.equipment_id = e.id
+        WHERE r.id = $1
+    `, [id]);
+    
+    if (result.rows.length === 0) return res.status(404).send('Not found');
+    const r = result.rows[0];
+    const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Delivery ${r.rental_number}</title>
+<style>
+body { font-family: Arial; margin: 40px; }
+.header { text-align: center; }
+.company { font-size: 24px; font-weight: bold; color: #0a2b4e; }
+</style>
+</head>
+<body>
+<div class="header">
+<div class="company">Pro-Coating Treatments Inc.</div>
+<div>1498 Camino Los Gonzalez Apt 3, San Juan, PR 00926-8802</div>
+<div>Tel (787) 604-4347 / (787) 309-8738</div>
+</div>
+<h2 style="text-align:center;">RENTAL EQUIPMENT DELIVERY</h2>
+<p><strong>Customer:</strong> ${r.customer_name}</p>
+<p><strong>Delivery #:</strong> ${r.rental_number}</p>
+<p><strong>Date:</strong> ${new Date(r.start_date).toLocaleDateString()}</p>
+<p><strong>Equipment:</strong> ${r.equipment_model} (${r.tons} Tons)</p>
+<p><strong>Total:</strong> $${r.subtotal}</p>
+<div style="margin-top:50px;">
+<div style="float:left;width:45%;">Customer Signature: _________________</div>
+<div style="float:right;width:45%;">ProCoating Rep: _________________</div>
+</div>
+</body>
+</html>`;
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
+});
+
+// Start server
+app.get("/health", (req, res) => {
+app.get("/login.html", (req, res) => { res.sendFile("/var/www/procoating/login.html"); });
+    res.json({ status: "OK", message: "API running" });
+});
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`✅ Server running on http://0.0.0.0:${PORT}`);
+});
+
+// Logging middleware
+app.use((req, res, next) => {
+    console.log(`${req.method} ${req.url}`);
+    next();
+});
+
+// Rutas alternativas sin /api (para Nginx)
+app.post('/auth/login', async (req, res) => {
+    const { username, password } = req.body;
+    const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+    if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid credentials' });
+    
+    const user = result.rows[0];
+    const hash = crypto.createHash('md5').update(password).digest('hex');
+    if (user.password !== hash) return res.status(401).json({ error: 'Invalid credentials' });
+    
+    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '24h' });
+    res.cookie('token', token, { httpOnly: true, maxAge: 24 * 60 * 60 * 1000 });
+    res.json({ success: true, user: { id: user.id, username: user.username } });
+});
+
+app.get('/auth/me', async (req, res) => {
+    const token = req.cookies.token;
+    if (!token) return res.status(401).json({ error: 'Not authenticated' });
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        res.json({ id: decoded.id, username: decoded.username, role: 'admin' });
+    } catch (err) {
+        res.status(401).json({ error: 'Invalid token' });
+    }
+});
+
+app.post('/auth/logout', (req, res) => {
+    res.clearCookie('token');
+    res.json({ success: true });
+});
+
+// ============ RUTAS SIN /API PARA NGINX ============
+app.get('/customers', async (req, res) => {
+    const result = await pool.query('SELECT * FROM customers');
+    res.json(result.rows);
+});
+
+app.get('/equipment', async (req, res) => {
+    const result = await pool.query('SELECT * FROM equipment');
+    res.json(result.rows);
+});
+
+app.get('/rentals', async (req, res) => {
+    const result = await pool.query('SELECT * FROM rentals');
+    res.json(result.rows);
+});
+
+app.get('/workorders', async (req, res) => {
+    const result = await pool.query('SELECT * FROM work_orders');
+    res.json(result.rows);
+});
+
+app.get('/spare-parts', async (req, res) => {
+    const result = await pool.query('SELECT * FROM spare_parts');
+    res.json(result.rows);
+});
+
+app.get('/suppliers', async (req, res) => {
+    const result = await pool.query('SELECT * FROM suppliers');
+    res.json(result.rows);
+});
+
+app.get('/purchase-orders', async (req, res) => {
+    const result = await pool.query('SELECT * FROM purchase_orders');
+    res.json(result.rows);
+});
+
+// Ruta PDF sin /api
+app.get('/rentals/:id/pdf', async (req, res) => {
+    const { id } = req.params;
+    const result = await pool.query(`
+        SELECT r.*, c.name as customer_name, e.model as equipment_model
+        FROM rentals r
+        JOIN customers c ON r.customer_id = c.id
+        JOIN equipment e ON r.equipment_id = e.id
+        WHERE r.id = $1
+    `, [id]);
+    
+    if (result.rows.length === 0) return res.status(404).send('Not found');
+    const r = result.rows[0];
+    const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Delivery ${r.rental_number}</title>
+<style>
+body { font-family: Arial; margin: 40px; }
+.header { text-align: center; }
+.company { font-size: 24px; font-weight: bold; color: #0a2b4e; }
+</style>
+</head>
+<body>
+<div class="header">
+<div class="company">Pro-Coating Treatments Inc.</div>
+<div>1498 Camino Los Gonzalez Apt 3, San Juan, PR 00926-8802</div>
+<div>Tel (787) 604-4347 / (787) 309-8738</div>
+</div>
+<h2 style="text-align:center;">RENTAL EQUIPMENT DELIVERY</h2>
+<p><strong>Customer:</strong> ${r.customer_name}</p>
+<p><strong>Delivery #:</strong> ${r.rental_number}</p>
+<p><strong>Date:</strong> ${new Date(r.start_date).toLocaleDateString()}</p>
+<p><strong>Equipment:</strong> ${r.equipment_model}</p>
+<p><strong>Total:</strong> $${r.subtotal}</p>
+<div style="margin-top:50px;">
+<div style="float:left;width:45%;">Customer Signature: _________________</div>
+<div style="float:right;width:45%;">ProCoating Rep: _________________</div>
+</div>
+</body>
+</html>`;
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
+});
+
+// Work orders routes sin /api
+app.get('/workorders/:id', async (req, res) => {
+    const { id } = req.params;
+    const result = await pool.query('SELECT * FROM work_orders WHERE id = $1', [id]);
+    res.json(result.rows[0] || null);
+});
+
+app.post('/workorders', async (req, res) => {
+    const { wo_number, customer_id, equipment_id, priority, reported_issue, is_warranty } = req.body;
+    const result = await pool.query(
+        'INSERT INTO work_orders (wo_number, customer_id, equipment_id, priority, reported_issue, is_warranty, status) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *',
+        [wo_number, customer_id, equipment_id, priority || 'normal', reported_issue, is_warranty || false, 'pending']
+    );
+    res.json(result.rows[0]);
+});

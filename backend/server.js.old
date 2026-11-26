@@ -1,0 +1,565 @@
+const express = require('express');
+const { Pool } = require('pg');
+const cors = require('cors');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+const app = express();
+const PORT = 5000;
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use('/uploads', express.static('uploads'));
+
+// Crear carpeta uploads
+if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
+
+// Configurar multer
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, 'uploads/'),
+    filename: (req, file, cb) => {
+        const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, unique + path.extname(file.originalname));
+    }
+});
+const upload = multer({ storage });
+
+// Conexión PostgreSQL
+const pool = new Pool({
+    host: 'localhost',
+    port: 5432,
+    user: 'procoatuser',
+    password: 'Gonda0216*',
+    database: 'procoatingdb',
+});
+
+pool.connect((err) => {
+    if (err) console.error('DB error:', err);
+    else console.log('✅ Database connected');
+});
+
+// Health check
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'OK', message: 'ProCoating API running' });
+});
+
+// ============ CUSTOMERS ============
+app.get('/api/customers', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM customers ORDER BY id');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/customers', async (req, res) => {
+    const { name, phone, email, address } = req.body;
+    try {
+        const result = await pool.query(
+            'INSERT INTO customers (name, phone, email, address) VALUES ($1, $2, $3, $4) RETURNING *',
+            [name, phone, email, address]
+        );
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/customers/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await pool.query('DELETE FROM customers WHERE id = $1', [id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============ EQUIPMENT ============
+app.get('/api/equipment', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM equipment ORDER BY id');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============ RENTALS ============
+app.get('/api/rentals', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT r.*, c.name as customer_name, e.model as equipment_model 
+            FROM rentals r
+            JOIN customers c ON r.customer_id = c.id
+            JOIN equipment e ON r.equipment_id = e.id
+            ORDER BY r.id DESC
+        `);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/rentals', async (req, res) => {
+    const { rental_number, customer_id, equipment_id, start_date, end_date, delivery_date, notes } = req.body;
+    
+    const start = new Date(start_date);
+    const end = end_date ? new Date(end_date) : null;
+    const total_days = end ? Math.ceil((end - start) / (1000 * 60 * 60 * 24)) : 1;
+    
+    try {
+        const equipmentResult = await pool.query('SELECT daily_rate FROM equipment WHERE id = $1', [equipment_id]);
+        const equipmentRate = equipmentResult.rows[0]?.daily_rate || 0;
+        const subtotal = equipmentRate * total_days;
+        
+        const result = await pool.query(
+            `INSERT INTO rentals (rental_number, customer_id, equipment_id, start_date, end_date, delivery_date, total_days, subtotal, notes, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active') RETURNING *`,
+            [rental_number, customer_id, equipment_id, start_date, end_date, delivery_date, total_days, subtotal, notes]
+        );
+        res.json({ success: true, rental: result.rows[0] });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============ WORK ORDERS ============
+app.get('/api/workorders', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT wo.*, c.name as customer_name, e.model as equipment_model
+            FROM work_orders wo
+            LEFT JOIN customers c ON wo.customer_id = c.id
+            LEFT JOIN equipment e ON wo.equipment_id = e.id
+            ORDER BY wo.id DESC
+        `);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/workorders', async (req, res) => {
+    const { wo_number, customer_id, equipment_id, employee_id, vehicle_id, priority, reported_issue, is_warranty } = req.body;
+    try {
+        const result = await pool.query(
+            `INSERT INTO work_orders (wo_number, customer_id, equipment_id, employee_id, vehicle_id, priority, reported_issue, is_warranty, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending') RETURNING *`,
+            [wo_number, customer_id, equipment_id, employee_id, vehicle_id, priority || 'normal', reported_issue, is_warranty || false]
+        );
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============ EMPLOYEES & VEHICLES ============
+app.get('/api/employees', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM employees WHERE is_active = true ORDER BY name');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/vehicles', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM vehicles WHERE status = $1 ORDER BY plate', ['available']);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============ PDF GENERATION ============
+app.get('/api/rentals/:id/pdf', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query(`
+            SELECT r.*, c.name as customer_name, e.model as equipment_model, e.tons, e.btu_h
+            FROM rentals r
+            JOIN customers c ON r.customer_id = c.id
+            JOIN equipment e ON r.equipment_id = e.id
+            WHERE r.id = $1
+        `, [id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).send('Rental not found');
+        }
+        
+        const r = result.rows[0];
+        const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Delivery ${r.rental_number}</title>
+<style>
+body { font-family: Arial, sans-serif; margin: 40px; }
+.header { text-align: center; margin-bottom: 30px; }
+.company { font-size: 24px; font-weight: bold; color: #0a2b4e; }
+.sub { font-size: 12px; color: #666; }
+.title { font-size: 20px; font-weight: bold; text-align: center; margin: 20px 0; }
+.row { display: flex; margin-bottom: 10px; }
+.label { font-weight: bold; width: 180px; }
+table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+th { background: #f0f0f0; }
+.signatures { display: flex; margin-top: 50px; gap: 40px; }
+.signature { flex: 1; }
+.footer { text-align: center; margin-top: 50px; font-size: 11px; color: #666; }
+</style>
+</head>
+<body>
+<div class="header">
+<div class="company">Pro-Coating Treatments Inc.</div>
+<div class="sub">1498 Camino Los Gonz\u00e1lez Apt 3, San Juan, PR 00926-8802</div>
+<div class="sub">Tel (787) 604-4347 / (787) 309-8738 | Fax (787) 293-4256</div>
+<div class="sub">www.procoatingpr.com</div>
+</div>
+<div class="title">RENTAL EQUIPMENT DELIVERY</div>
+<div class="row"><div class="label">CUSTOMER NAME:</div><div>${r.customer_name}</div></div>
+<div class="row"><div class="label">DATE:</div><div>${new Date(r.delivery_date || r.start_date).toLocaleDateString()}</div></div>
+<div class="row"><div class="label">DELIVERY #:</div><div>${r.rental_number}</div></div>
+<div class="row"><div class="label">PROJECT:</div><div>${r.notes ? r.notes.split('\n')[0] : '—'}</div></div>
+<table>
+<thead><tr><th>QTY</th><th>DESCRIPTION</th><th>NOTES</th></tr></thead>
+<tbody><tr><td>1</td><td>${r.equipment_model} (${r.tons} Tons / ${r.btu_h?.toLocaleString()} BTU/h)</td><td></td></tr></tbody>
+</table>
+<div class="row"><div class="label">START DATE:</div><div>${new Date(r.start_date).toLocaleDateString()}</div></div>
+<div class="row"><div class="label">END DATE:</div><div>${r.end_date ? new Date(r.end_date).toLocaleDateString() : '—'}</div></div>
+<div class="row"><div class="label">TOTAL DAYS:</div><div>${r.total_days || '—'}</div></div>
+${r.notes ? `<div class="row"><div class="label">NOTES:</div><div>${r.notes}</div></div>` : ''}
+<div class="signatures">
+<div class="signature">CUSTOMER (NAME)<br><br>_________________________<br><span style="font-size:10px;">CLIENTE (NOMBRE EN LETRA DE MOLDE)</span></div>
+<div class="signature">PRO-COATING REP<br><br>_________________________<br><span style="font-size:10px;">SIGNATURE / FIRMA</span></div>
+</div>
+<div class="footer">Thank you for choosing Pro-Coating Treatments Inc.</div>
+</body>
+</html>`;
+        
+        res.setHeader('Content-Type', 'text/html');
+        res.send(html);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============ ACCESSORIES ============
+app.get('/api/accessories', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM accessories ORDER BY id');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`✅ Server running on http://0.0.0.0:${PORT}`);
+});
+
+// ============ WORK ORDERS - COMPLETAR ============
+
+// Get single work order with photos and costs
+app.get('/api/workorders/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const woResult = await pool.query(`
+            SELECT wo.*, c.name as customer_name, c.phone, c.address,
+                   e.model as equipment_model, e.tons, e.serial_number,
+                   emp.name as employee_name, v.plate as vehicle_plate
+            FROM work_orders wo
+            LEFT JOIN customers c ON wo.customer_id = c.id
+            LEFT JOIN equipment e ON wo.equipment_id = e.id
+            LEFT JOIN employees emp ON wo.employee_id = emp.id
+            LEFT JOIN vehicles v ON wo.vehicle_id = v.id
+            WHERE wo.id = $1
+        `, [id]);
+        
+        const photosResult = await pool.query(
+            'SELECT * FROM work_order_photos WHERE work_order_id = $1 ORDER BY id DESC',
+            [id]
+        );
+        
+        const costsResult = await pool.query(
+            'SELECT * FROM work_order_costs WHERE work_order_id = $1 ORDER BY id',
+            [id]
+        );
+        
+        res.json({
+            work_order: woResult.rows[0],
+            photos: photosResult.rows,
+            costs: costsResult.rows
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Update work order status and details
+app.put('/api/workorders/:id', async (req, res) => {
+    const { id } = req.params;
+    const { status, end_date, diagnosis, solution, internal_cost, employee_id, vehicle_id } = req.body;
+    try {
+        const result = await pool.query(
+            `UPDATE work_orders 
+             SET status = COALESCE($1, status),
+                 end_date = COALESCE($2, end_date),
+                 diagnosis = COALESCE($3, diagnosis),
+                 solution = COALESCE($4, solution),
+                 internal_cost = COALESCE($5, internal_cost),
+                 employee_id = COALESCE($6, employee_id),
+                 vehicle_id = COALESCE($7, vehicle_id)
+             WHERE id = $8 RETURNING *`,
+            [status, end_date, diagnosis, solution, internal_cost, employee_id, vehicle_id, id]
+        );
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Upload photo to work order
+app.post('/api/workorders/:id/photos', upload.single('photo'), async (req, res) => {
+    const { id } = req.params;
+    const image_url = `/uploads/${req.file.filename}`;
+    const { description } = req.body;
+    
+    try {
+        const result = await pool.query(
+            'INSERT INTO work_order_photos (work_order_id, image_url, description) VALUES ($1, $2, $3) RETURNING *',
+            [id, image_url, description || '']
+        );
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Add cost to work order
+app.post('/api/workorders/:id/costs', async (req, res) => {
+    const { id } = req.params;
+    const { description, amount } = req.body;
+    try {
+        const result = await pool.query(
+            'INSERT INTO work_order_costs (work_order_id, description, amount) VALUES ($1, $2, $3) RETURNING *',
+            [id, description, amount]
+        );
+        
+        // Update total internal cost
+        await pool.query(
+            'UPDATE work_orders SET internal_cost = internal_cost + $1 WHERE id = $2',
+            [amount, id]
+        );
+        
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Delete photo from work order
+app.delete('/api/workorders/photos/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await pool.query('DELETE FROM work_order_photos WHERE id = $1', [id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+console.log('✅ Work Orders extended endpoints added');
+
+// Get single work order
+app.get('/api/workorders/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query(`
+            SELECT wo.*, c.name as customer_name, c.phone, c.address,
+                   e.model as equipment_model, e.tons, e.btu_h
+            FROM work_orders wo
+            LEFT JOIN customers c ON wo.customer_id = c.id
+            LEFT JOIN equipment e ON wo.equipment_id = e.id
+            WHERE wo.id = $1
+        `, [id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Work order not found' });
+        }
+        
+        // Get photos
+        const photos = await pool.query(
+            'SELECT * FROM work_order_photos WHERE work_order_id = $1 ORDER BY id DESC',
+            [id]
+        );
+        
+        // Get costs
+        const costs = await pool.query(
+            'SELECT * FROM work_order_costs WHERE work_order_id = $1 ORDER BY id',
+            [id]
+        );
+        
+        res.json({
+            work_order: result.rows[0],
+            photos: photos.rows,
+            costs: costs.rows
+        });
+    } catch (err) {
+        console.error('Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Update work order
+app.put('/api/workorders/:id', async (req, res) => {
+    const { id } = req.params;
+    const { status, end_date, diagnosis, solution, internal_cost } = req.body;
+    try {
+        const result = await pool.query(
+            `UPDATE work_orders 
+             SET status = COALESCE($1, status),
+                 end_date = COALESCE($2, end_date),
+                 diagnosis = COALESCE($3, diagnosis),
+                 solution = COALESCE($4, solution),
+                 internal_cost = COALESCE($5, internal_cost)
+             WHERE id = $6 RETURNING *`,
+            [status, end_date, diagnosis, solution, internal_cost, id]
+        );
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Upload photo to work order
+app.post('/api/workorders/:id/photos', upload.single('photo'), async (req, res) => {
+    const { id } = req.params;
+    const image_url = `/uploads/${req.file.filename}`;
+    const { description } = req.body;
+    
+    try {
+        const result = await pool.query(
+            'INSERT INTO work_order_photos (work_order_id, image_url, description) VALUES ($1, $2, $3) RETURNING *',
+            [id, image_url, description || '']
+        );
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Add cost to work order
+app.post('/api/workorders/:id/costs', async (req, res) => {
+    const { id } = req.params;
+    const { description, amount } = req.body;
+    try {
+        const result = await pool.query(
+            'INSERT INTO work_order_costs (work_order_id, description, amount) VALUES ($1, $2, $3) RETURNING *',
+            [id, description, amount]
+        );
+        
+        await pool.query(
+            'UPDATE work_orders SET internal_cost = internal_cost + $1 WHERE id = $2',
+            [amount, id]
+        );
+        
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Delete photo
+app.delete('/api/workorders/photos/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await pool.query('DELETE FROM work_order_photos WHERE id = $1', [id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Employees
+app.get('/api/employees', async (req, res) => {
+    const result = await pool.query('SELECT * FROM employees WHERE is_active = true');
+    res.json(result.rows);
+});
+
+// Vehicles
+app.get('/api/vehicles', async (req, res) => {
+    const result = await pool.query('SELECT * FROM vehicles WHERE status = $1', ['available']);
+    res.json(result.rows);
+});
+
+// Accessories
+app.get('/api/accessories', async (req, res) => {
+    const result = await pool.query('SELECT * FROM accessories ORDER BY id');
+    res.json(result.rows);
+});
+
+// PDF
+app.get('/api/rentals/:id/pdf', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query(`
+            SELECT r.*, c.name as customer_name, e.model as equipment_model, e.tons, e.btu_h
+            FROM rentals r
+            JOIN customers c ON r.customer_id = c.id
+            JOIN equipment e ON r.equipment_id = e.id
+            WHERE r.id = $1
+        `, [id]);
+        
+        if (result.rows.length === 0) return res.status(404).send('Not found');
+        const r = result.rows[0];
+        const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Delivery ${r.rental_number}</title>
+<style>
+body { font-family: Arial; margin: 40px; }
+.header { text-align: center; margin-bottom: 30px; }
+.company { font-size: 24px; font-weight: bold; color: #0a2b4e; }
+.title { font-size: 20px; font-weight: bold; text-align: center; margin: 20px 0; }
+.row { display: flex; margin-bottom: 10px; }
+.label { font-weight: bold; width: 180px; }
+table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+.signatures { display: flex; margin-top: 50px; gap: 40px; }
+.signature { flex: 1; }
+.footer { text-align: center; margin-top: 50px; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="header">
+<div class="company">Pro-Coating Treatments Inc.</div>
+<div>1498 Camino Los Gonz\u00e1lez Apt 3, San Juan, PR 00926-8802</div>
+<div>Tel (787) 604-4347 / (787) 309-8738 | Fax (787) 293-4256</div>
+</div>
+<div class="title">RENTAL EQUIPMENT DELIVERY</div>
+<div class="row"><div class="label">CUSTOMER NAME:</div><div>${r.customer_name}</div></div>
+<div class="row"><div class="label">DATE:</div><div>${new Date(r.delivery_date || r.start_date).toLocaleDateString()}</div></div>
+<div class="row"><div class="label">DELIVERY #:</div><div>${r.rental_number}</div></div>
+<table>
+<thead><tr><th>QTY</th><th>DESCRIPTION</th><th>NOTES</th></tr></thead>
+<tbody><tr><td>1</td><td>${r.equipment_model} (${r.tons} Tons)</td><td></td></tr></tbody>
+</table>
+<div class="row"><div class="label">START DATE:</div><div>${new Date(r.start_date).toLocaleDateString()}</div></div>
+<div class="row"><div class="label">END DATE:</div><div>${r.end_date ? new Date(r.end_date).toLocaleDateString() : '—'}</div></div>
+<div class="signatures">
+<div class="signature">CUSTOMER (NAME)<br><br>_________________________</div>
+<div class="signature">PRO-COATING REP<br><br>_________________________</div>
+</div>
+<div class="footer">Thank you for choosing Pro-Coating Treatments Inc.</div>
+</body>
+</html>`;
+        res.setHeader('Content-Type', 'text/html');
+        res.send(html);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
