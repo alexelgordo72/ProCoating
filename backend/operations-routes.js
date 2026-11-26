@@ -695,7 +695,69 @@ module.exports = function registerOperationsRoutes(app, pool, authMw) {
       }
 
       await client.query('COMMIT');
-      res.status(201).json(ins.rows[0]);
+      const createdIo = ins.rows[0];
+      const ioObj = (createdIo && createdIo.id) ? createdIo : (createdIo && createdIo.order ? createdIo.order : {});
+
+      // Auto-mirror linked Work Order in native work_orders table
+      try {
+        const woColsRes = await pool.query(`
+          SELECT column_name, data_type, is_nullable, column_default
+          FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'work_orders'
+        `);
+        if (woColsRes.rows.length > 0 && ioObj.id) {
+          const cols = Object.fromEntries(woColsRes.rows.map(r => [r.column_name, r]));
+          const qInfo = await pool.query(
+            `SELECT q.quote_number, q.service_type, c.name AS customer_name, e.name AS equipment_name
+             FROM internal_orders io
+             LEFT JOIN quotations q ON q.id = io.quotation_id
+             LEFT JOIN customers c ON c.id = io.customer_id
+             LEFT JOIN equipment e ON e.id = io.equipment_id
+             WHERE io.id = $1`,
+            [ioObj.id]
+          );
+          const meta = qInfo.rows[0] || {};
+          const baseNum = String(ioObj.order_number || ('IO-' + ioObj.id));
+          const woNum = baseNum.replace(/^IO-/, 'WO-');
+          const woData = {};
+
+          if ('wo_number' in cols) woData.wo_number = woNum;
+          else if ('order_number' in cols) woData.order_number = woNum;
+          if ('customer_id' in cols && ioObj.customer_id) woData.customer_id = ioObj.customer_id;
+          if ('equipment_id' in cols && ioObj.equipment_id) woData.equipment_id = ioObj.equipment_id;
+          const techId = ioObj.installed_by_id || ioObj.delivered_by_id;
+          if ('assigned_to' in cols && techId) woData.assigned_to = techId;
+          if ('technician_id' in cols && techId) woData.technician_id = techId;
+          if ('employee_id' in cols && techId) woData.employee_id = techId;
+
+          const summary = `[${baseNum}${meta.quote_number ? ' / ' + meta.quote_number : ''}] ${meta.service_type || 'Dispatch & Setup'} - ${meta.equipment_name || 'Equipment'}`;
+          if ('title' in cols) woData.title = summary;
+          if ('description' in cols) woData.description = `${summary}${ioObj.delivery_address ? ' | Site: ' + ioObj.delivery_address : ''}`;
+          if ('notes' in cols) woData.notes = `Auto-generated from Dispatch Order ${baseNum} (Quotation ${meta.quote_number || 'N/A'})`;
+          if ('type' in cols) woData.type = meta.service_type || 'Installation / Dispatch';
+          if ('work_type' in cols) woData.work_type = meta.service_type || 'Installation / Dispatch';
+          if ('priority' in cols) woData.priority = 'Normal';
+          if ('status' in cols) woData.status = 'In Progress';
+          if ('scheduled_date' in cols && ioObj.delivery_date) woData.scheduled_date = ioObj.delivery_date;
+          if ('due_date' in cols && ioObj.delivery_date) woData.due_date = ioObj.delivery_date;
+
+          for (const [cname, info] of Object.entries(cols)) {
+            if (!(cname in woData) && info.is_nullable === 'NO' && !info.column_default && cname !== 'id') {
+              woData[cname] = (info.data_type.includes('int') || info.data_type.includes('numeric')) ? 0 : 'N/A';
+            }
+          }
+          const keys = Object.keys(woData);
+          const vals = Object.values(woData);
+          if (keys.length > 0) {
+            const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
+            await pool.query(`INSERT INTO work_orders (${keys.join(', ')}) VALUES (${placeholders})`, vals);
+          }
+        }
+      } catch (woErr) {
+        console.warn('Work order mirror skipped:', woErr.message);
+      }
+
+      res.status(201).json(createdIo);
     } catch (err) {
       await client.query('ROLLBACK');
       res.status(400).json({ error: err.message });
@@ -1067,4 +1129,207 @@ module.exports = function registerOperationsRoutes(app, pool, authMw) {
       res.status(500).send(err.message);
     }
   });
+
+  // ==================== 6. USER ADMINISTRATION & PROFILE CRUD ====================
+  async function hashPasswordCompat(plain) {
+    const crypto = require('crypto');
+    let bcrypt = null;
+    try { bcrypt = require('bcryptjs'); } catch (_) {
+      try { bcrypt = require('bcrypt'); } catch (__) {}
+    }
+    const sampleRes = await pool.query("SELECT password FROM users WHERE password IS NOT NULL AND password <> '' LIMIT 1");
+    const sample = sampleRes.rows.length ? String(sampleRes.rows[0].password) : '';
+    if (sample.startsWith('$2') && bcrypt) return bcrypt.hashSync(plain, 10);
+    if (/^[a-f0-9]{64}$/i.test(sample)) return crypto.createHash('sha256').update(plain).digest('hex');
+    if (bcrypt) return bcrypt.hashSync(plain, 10);
+    return plain;
+  }
+
+  async function resolveCurrentUser(req) {
+    const u = req.user || (req.session && req.session.user) || {};
+    if (u.id) {
+      const r = await pool.query('SELECT id, username, full_name, email, role_id, is_active FROM users WHERE id = $1', [u.id]);
+      if (r.rows.length) return r.rows[0];
+    }
+    if (u.username || u.email) {
+      const r = await pool.query(
+        'SELECT id, username, full_name, email, role_id, is_active FROM users WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($2) LIMIT 1',
+        [u.username || '', u.email || '']
+      );
+      if (r.rows.length) return r.rows[0];
+    }
+    return null;
+  }
+
+  async function getRolesList() {
+    try {
+      const r = await pool.query('SELECT * FROM roles ORDER BY id ASC');
+      return r.rows.map(row => ({
+        id: row.id,
+        name: row.name || row.role_name || row.title || (row.id === 1 ? 'Administrator' : 'Standard User')
+      }));
+    } catch (_) {
+      return [
+        { id: 1, name: 'Administrator' },
+        { id: 2, name: 'Operator / Technician' }
+      ];
+    }
+  }
+
+  app.get('/api/users/me', guard, async (req, res) => {
+    try {
+      const me = await resolveCurrentUser(req);
+      const roles = await getRolesList();
+      res.json({ user: me, roles });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put('/api/users/me', guard, async (req, res) => {
+    try {
+      const me = await resolveCurrentUser(req);
+      if (!me) return res.status(401).json({ error: 'Active user session not identified' });
+      const { full_name, email, new_password } = req.body;
+      if (!full_name || !email) return res.status(400).json({ error: 'Full name and email are required' });
+
+      if (new_password && String(new_password).trim().length > 0) {
+        if (String(new_password).trim().length < 6) {
+          return res.status(400).json({ error: 'New password must be at least 6 characters' });
+        }
+        const hashed = await hashPasswordCompat(String(new_password).trim());
+        await pool.query(
+          'UPDATE users SET full_name = $1, email = $2, password = $3 WHERE id = $4',
+          [full_name.trim(), email.trim(), hashed, me.id]
+        );
+      } else {
+        await pool.query(
+          'UPDATE users SET full_name = $1, email = $2 WHERE id = $3',
+          [full_name.trim(), email.trim(), me.id]
+        );
+      }
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/users', guard, async (_req, res) => {
+    try {
+      const roles = await getRolesList();
+      const roleMap = Object.fromEntries(roles.map(r => [Number(r.id), r.name]));
+      const { rows } = await pool.query(
+        'SELECT id, username, full_name, email, role_id, is_active, last_login, created_at FROM users ORDER BY id ASC'
+      );
+      const enriched = rows.map(u => ({
+        ...u,
+        role_name: roleMap[Number(u.role_id)] || (Number(u.role_id) === 1 ? 'Administrator' : 'Standard User')
+      }));
+      res.json({ users: enriched, roles });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/users', guard, async (req, res) => {
+    try {
+      const { username, full_name, email, password, role_id, is_active } = req.body;
+      if (!username || !full_name || !email || !password) {
+        return res.status(400).json({ error: 'Username, full name, email, and password are required' });
+      }
+      if (String(password).trim().length < 6) {
+        return res.status(400).json({ error: 'Password must be at least 6 characters' });
+      }
+      const dup = await pool.query(
+        'SELECT id FROM users WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($2) LIMIT 1',
+        [username.trim(), email.trim()]
+      );
+      if (dup.rows.length) {
+        return res.status(409).json({ error: 'Username or email is already registered' });
+      }
+      const hashed = await hashPasswordCompat(String(password).trim());
+      const ins = await pool.query(
+        `INSERT INTO users (username, password, full_name, email, role_id, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, username, full_name, email, role_id, is_active, created_at`,
+        [username.trim(), hashed, full_name.trim(), email.trim(), Number(role_id || 2), is_active !== false]
+      );
+      res.status(201).json(ins.rows[0]);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put('/api/users/:id', guard, async (req, res) => {
+    try {
+      const uid = Number(req.params.id);
+      const { username, full_name, email, password, role_id, is_active } = req.body;
+      if (!username || !full_name || !email) {
+        return res.status(400).json({ error: 'Username, full name, and email are required' });
+      }
+      const dup = await pool.query(
+        'SELECT id FROM users WHERE (LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($2)) AND id <> $3 LIMIT 1',
+        [username.trim(), email.trim(), uid]
+      );
+      if (dup.rows.length) {
+        return res.status(409).json({ error: 'Another user already uses that username or email' });
+      }
+      if (password && String(password).trim().length > 0) {
+        if (String(password).trim().length < 6) {
+          return res.status(400).json({ error: 'New password must be at least 6 characters' });
+        }
+        const hashed = await hashPasswordCompat(String(password).trim());
+        await pool.query(
+          `UPDATE users
+           SET username = $1, full_name = $2, email = $3, role_id = $4, is_active = $5, password = $6
+           WHERE id = $7`,
+          [username.trim(), full_name.trim(), email.trim(), Number(role_id || 2), Boolean(is_active), hashed, uid]
+        );
+      } else {
+        await pool.query(
+          `UPDATE users
+           SET username = $1, full_name = $2, email = $3, role_id = $4, is_active = $5
+           WHERE id = $6`,
+          [username.trim(), full_name.trim(), email.trim(), Number(role_id || 2), Boolean(is_active), uid]
+        );
+      }
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/users/:id/password', guard, async (req, res) => {
+    try {
+      const uid = Number(req.params.id);
+      const { new_password } = req.body;
+      if (!new_password || String(new_password).trim().length < 6) {
+        return res.status(400).json({ error: 'New password must be at least 6 characters' });
+      }
+      const hashed = await hashPasswordCompat(String(new_password).trim());
+      await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashed, uid]);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/users/:id', guard, async (req, res) => {
+    try {
+      const uid = Number(req.params.id);
+      if (uid === 1) return res.status(400).json({ error: 'Primary system administrator (ID 1) cannot be deleted' });
+      const me = await resolveCurrentUser(req);
+      if (me && Number(me.id) === uid) {
+        return res.status(400).json({ error: 'You cannot delete your own active account' });
+      }
+      await pool.query('DELETE FROM users WHERE id = $1', [uid]);
+      res.json({ ok: true });
+    } catch (err) {
+      if (err.code === '23503') {
+        return res.status(409).json({ error: 'User has linked audit/operational records. Edit the user and set Status to Inactive instead.' });
+      }
+      res.status(500).json({ error: err.message });
+    }
+  });
+
 };

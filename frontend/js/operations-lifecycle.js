@@ -78,8 +78,17 @@
       .pct-ops-view { display: none; padding: 20px; width: 100%; max-width: 100%; box-sizing: border-box; overflow-x: hidden; }
       .pct-ops-view * { box-sizing: border-box; }
       .pct-ops-card { background: var(--bg-card, #ffffff); color: var(--text-primary, #0f172a); border: 1px solid var(--border-color, #cbd5e1); border-radius: 10px; padding: 18px; margin-bottom: 18px; box-shadow: 0 2px 6px rgba(15,23,42,0.05); max-width: 100%; }
-      .pct-ops-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 12px; }
-      .pct-ops-input { width: 100%; max-width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.88rem; }
+      .pct-ops-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; align-items: end; }
+      .pct-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: end; }
+      .pct-grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: end; }
+      .pct-span-2 { grid-column: span 2; }
+      .pct-form-section { background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; }
+      .pct-form-section-title { font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: #003B6F; margin: 0 0 12px 0; padding-bottom: 6px; border-bottom: 1px solid #CBD5E1; display: flex; justify-content: space-between; align-items: center; }
+      .pct-field label { display: block; font-size: 0.8rem; font-weight: 600; color: #334155; margin-bottom: 5px; line-height: 1.25; }
+      .pct-items-header { display: grid; grid-template-columns: 220px 165px minmax(180px, 1fr) 80px 90px 36px; gap: 10px; padding: 0 2px 6px 2px; font-size: 0.75rem; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.03em; }
+      @media (max-width: 1024px) { .pct-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+      @media (max-width: 768px) { .pct-grid-3, .pct-grid-4 { grid-template-columns: 1fr; } .pct-span-2 { grid-column: span 1; } .pct-items-header { display: none; } }
+      .pct-ops-input { width: 100%; max-width: 100%; height: 38px; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.88rem; background: #ffffff; color: #0f172a; } textarea.pct-ops-input { height: auto; }
       .pct-ops-input[readonly] { background: #F1F5F9; color: #334155; font-weight: 600; cursor: not-allowed; }
       .pct-ops-btn { padding: 8px 14px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 6px; }
       .pct-ops-btn-primary { background: #003B6F; color: #fff; }
@@ -287,7 +296,7 @@
         <input type="text" class="pct-ops-input qt-desc" placeholder="Item description (e.g., 100T Air-Cooled Chiller Monthly Rental)" required />
         <input type="number" step="0.01" class="pct-ops-input qt-qty" value="1" min="0.01" />
         <input type="number" step="0.01" class="pct-ops-input qt-price" value="0" min="0" />
-        <button type="button" onclick="this.parentElement.remove()" style="background:#FEE2E2;color:#DC2626;border:none;border-radius:6px;height:34px;cursor:pointer;font-weight:700;">&times;</button>
+        <button type="button" onclick="this.parentElement.remove()" style="background:#FEE2E2;color:#DC2626;border:none;border-radius:6px;height:38px;cursor:pointer;font-weight:700;">&times;</button>
       `;
       wrap.querySelector('.qt-catalog').onchange = (ev) => {
         const opt = ev.target.selectedOptions[0];
@@ -395,71 +404,47 @@
         <button class="pct-ops-btn pct-ops-btn-primary" id="btnToggleNewOrder">+ New Dispatch Order from Quotation</button>
       </div>
 
-      <div id="newOrderCard" class="pct-ops-card" style="display:${prefillQuote ? 'block' : 'none'};">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-          <h3 style="margin:0;color:#003B6F;">Create Internal Dispatch Order (Linked to Quotation)</h3>
-          <span id="ioTraceBadge" style="font-size:0.8rem;font-weight:700;color:#005596;background:#EFF6FF;padding:4px 10px;border-radius:6px;border:1px solid #BFDBFE;">Select a Quotation to auto-load client & scope</span>
+      <div id="newOrderCard" class="pct-ops-card" style="display:${prefillQuote ? 'block' : 'none'};border-top:4px solid #003B6F;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+          <div>
+            <h3 style="margin:0;color:#003B6F;">Create Internal Dispatch Order (Linked to Quotation)</h3>
+            <small style="color:#64748b;">Complete quotation link, equipment/crew assignment, and staged warehouse accessories.</small>
+          </div>
+          <span id="ioTraceBadge" style="font-size:0.8rem;font-weight:700;color:#005596;background:#EFF6FF;padding:5px 12px;border-radius:6px;border:1px solid #BFDBFE;">Select a Quotation to auto-load client & scope</span>
         </div>
-
         <form id="pctOrderForm">
           <input type="hidden" id="ioCustomer" required />
-          <div class="pct-ops-grid">
-            <div style="grid-column: span 2;">
-              <label><strong>Linked Quotation *</strong> (Required for Traceability)</label>
-              <select id="ioQuoteSelect" class="pct-ops-input" required style="border:2px solid #003B6F;font-weight:600;">
-                <option value="">-- Select Created / Approved Quotation --</option>
-                ${quoteOpts}
-              </select>
-            </div>
-            <div>
-              <label>Linked Customer (Auto-filled)</label>
-              <input type="text" id="ioCustomerName" class="pct-ops-input" readonly placeholder="Auto-filled from quotation..." />
-            </div>
-            <div>
-              <label>On-Site Contact</label>
-              <select id="ioContact" class="pct-ops-input"><option value="">-- Select Contact --</option></select>
-            </div>
-            <div>
-              <label>Equipment Unit to Dispatch</label>
-              <select id="ioEquipment" class="pct-ops-input"><option value="">-- Select Equipment --</option>${eqOpts}</select>
-            </div>
-            <div>
-              <label>Monthly Rental Rate ($)</label>
-              <input type="number" step="0.01" id="ioRate" class="pct-ops-input" value="0" />
-            </div>
-            <div>
-              <label>Delivery Driver / Transporter</label>
-              <select id="ioDriver" class="pct-ops-input"><option value="">-- Assign Driver --</option>${empOpts}</select>
-            </div>
-            <div>
-              <label>Installing Technician / Operator</label>
-              <select id="ioInstaller" class="pct-ops-input"><option value="">-- Assign Installer --</option>${empOpts}</select>
-            </div>
-            <div>
-              <label>Fleet Vehicle / Truck</label>
-              <select id="ioVehicle" class="pct-ops-input"><option value="">-- Select Truck/Trailer --</option>${vehOpts}</select>
-            </div>
-            <div>
-              <label>Scheduled Delivery Date</label>
-              <input type="date" id="ioDelivDate" class="pct-ops-input" value="${new Date().toISOString().slice(0,10)}" />
+          <div class="pct-form-section">
+            <div class="pct-form-section-title"><span>1. Quotation & Customer Traceability</span></div>
+            <div class="pct-grid-3">
+              <div class="pct-field"><label>Linked Quotation *</label><select id="ioQuoteSelect" class="pct-ops-input" required style="border:2px solid #003B6F;font-weight:600;"><option value="">-- Select Created / Approved Quotation --</option>${quoteOpts}</select></div>
+              <div class="pct-field"><label>Customer Account (Auto-filled)</label><input type="text" id="ioCustomerName" class="pct-ops-input" readonly placeholder="Auto-filled from quotation..." /></div>
+              <div class="pct-field"><label>On-Site Contact Person</label><select id="ioContact" class="pct-ops-input"><option value="">-- Select Contact --</option></select></div>
             </div>
           </div>
-
-          <div style="margin-top:10px;">
-            <label>Delivery Site Address & Logistics Instructions</label>
-            <input type="text" id="ioAddress" class="pct-ops-input" placeholder="Customer facility address, gate instructions, crane/rigging notes..." />
-          </div>
-
-          <div style="margin-top:14px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
-              <strong style="color:#003B6F;">Required Accessories, Hoses, Ducts, Cables & Supplies for Dispatch</strong>
-              <button type="button" class="pct-ops-btn pct-ops-btn-outline" id="btnAddDispatchItem">+ Add Supply / Accessory</button>
+          <div class="pct-form-section">
+            <div class="pct-form-section-title"><span>2. Equipment, Field Crew & Logistics Schedule</span></div>
+            <div class="pct-grid-4">
+              <div class="pct-field"><label>Equipment Unit to Dispatch</label><select id="ioEquipment" class="pct-ops-input"><option value="">-- Select Equipment --</option>${eqOpts}</select></div>
+              <div class="pct-field"><label>Monthly Rental Rate ($)</label><input type="number" step="0.01" id="ioRate" class="pct-ops-input" value="0" /></div>
+              <div class="pct-field"><label>Scheduled Delivery Date</label><input type="date" id="ioDelivDate" class="pct-ops-input" value="${new Date().toISOString().slice(0,10)}" /></div>
+              <div class="pct-field"><label>Fleet Vehicle / Truck</label><select id="ioVehicle" class="pct-ops-input"><option value="">-- Select Truck/Trailer --</option>${vehOpts}</select></div>
+              <div class="pct-field"><label>Delivery Driver / Transporter</label><select id="ioDriver" class="pct-ops-input"><option value="">-- Assign Driver --</option>${empOpts}</select></div>
+              <div class="pct-field"><label>Installing Technician / Operator</label><select id="ioInstaller" class="pct-ops-input"><option value="">-- Assign Installer --</option>${empOpts}</select></div>
+              <div class="pct-field pct-span-2"><label>Delivery Site Address & Logistics Instructions</label><input type="text" id="ioAddress" class="pct-ops-input" placeholder="Customer facility address, gate instructions, crane/rigging notes..." /></div>
             </div>
+          </div>
+          <div class="pct-form-section" style="margin-bottom:0;">
+            <div class="pct-form-section-title">
+              <span>3. Staged Accessories, Hoses, Ducts, Cables & Supplies</span>
+              <button type="button" class="pct-ops-btn pct-ops-btn-outline" style="padding:5px 11px;font-size:0.8rem;text-transform:none;" id="btnAddDispatchItem">+ Add Supply / Accessory</button>
+            </div>
+            <div class="pct-items-header"><span>Warehouse Catalog</span><span>Category</span><span>Item Description</span><span>Qty</span><span>Unit</span><span></span></div>
             <div id="ioItemsContainer"></div>
           </div>
-
-          <div style="margin-top:14px;text-align:right;">
-            <button type="submit" class="pct-ops-btn pct-ops-btn-green">Create Order & Mark Equipment "Staged / Prepared"</button>
+          <div style="margin-top:16px;display:flex;justify-content:flex-end;gap:10px;">
+            <button type="button" class="pct-ops-btn pct-ops-btn-outline" onclick="document.getElementById('newOrderCard').style.display='none'">Cancel</button>
+            <button type="submit" class="pct-ops-btn pct-ops-btn-green" style="padding:10px 18px;">Create Order & Mark Equipment "Staged / Prepared"</button>
           </div>
         </form>
       </div>
@@ -483,7 +468,7 @@
 
     function addDispatchItem(desc = '', qty = 1, unit = 'Unit', cat = 'Hoses & Sleeves') {
       const row = document.createElement('div');
-      row.style.cssText = 'display:grid;grid-template-columns:185px 150px minmax(150px,1fr) 70px 80px 34px;gap:8px;margin-bottom:8px;align-items:center;';
+      row.style.cssText = 'display:grid;grid-template-columns:220px 165px minmax(180px,1fr) 80px 90px 36px;gap:10px;margin-bottom:8px;align-items:center;';
       row.innerHTML = `
         <select class="pct-ops-input io-wh-pick"><option value="">-- Pick Warehouse Item --</option>${whOpts}</select>
         <input type="text" class="pct-ops-input io-cat" value="${cat}" placeholder="Category" />
@@ -600,14 +585,19 @@
         <td><span style="color:#DC2626;font-weight:600;">$${Number(o.total_internal_cost).toFixed(2)}</span></td>
         <td>${badge(o.status)}</td>
         <td style="white-space:nowrap;">
-          <button class="pct-ops-btn pct-ops-btn-primary" style="padding:5px 10px;" onclick="window._pctOpenOrderDetail(${o.id})">Checklist, Sign & Parts</button>
-          <a href="/api/internal-orders/${o.id}/pdf" target="_blank" class="pct-ops-btn pct-ops-btn-outline" style="text-decoration:none;padding:5px 9px;">PDF</a>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;">
+            <button class="pct-ops-btn pct-ops-btn-primary" style="padding:4px 8px;font-size:0.78rem;" onclick="window._pctOpenOrderDetail(${o.id}, 'sec-checklist')">Checklist & Photos</button>
+            <button class="pct-ops-btn pct-ops-btn-green" style="padding:4px 8px;font-size:0.78rem;" onclick="window._pctOpenOrderDetail(${o.id}, 'sec-signature')">On-Site Sign-Off</button>
+            <button class="pct-ops-btn pct-ops-btn-outline" style="padding:4px 8px;font-size:0.78rem;" onclick="window._pctOpenOrderDetail(${o.id}, 'sec-expenses')">Maint. & Costs</button>
+            ${o.equipment_id ? `<button class="pct-ops-btn pct-ops-btn-outline" style="padding:4px 8px;font-size:0.78rem;" onclick="window._pctShowEquipmentHistory(${o.equipment_id})">Traceability</button>` : ''}
+            <a href="/api/internal-orders/${o.id}/pdf" target="_blank" class="pct-ops-btn pct-ops-btn-outline" style="text-decoration:none;padding:4px 8px;font-size:0.78rem;">PDF</a>
+          </div>
         </td>
       </tr>
     `).join('');
   }
 
-  window._pctOpenOrderDetail = async function (orderId) {
+  window._pctOpenOrderDetail = async function (orderId, focusSection) {
     const modal = document.getElementById('pctOrderDetailModal');
     const box = document.getElementById('pctOrderDetailContent');
     modal.style.display = 'flex';
@@ -646,7 +636,7 @@
 
       <div class="pct-ops-card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-          <h4 style="margin:0;color:#003B6F;">1. Pre-Departure & Customer On-Site Verification Checklist</h4>
+          <h4 id="sec-checklist" style="margin:0;color:#003B6F;">1. Pre-Departure & Customer On-Site Verification Checklist</h4>
           <button type="button" class="pct-ops-btn pct-ops-btn-green" style="padding:5px 12px;" id="btnSaveChecklist">Save Checklist</button>
         </div>
         <table class="pct-ops-table">
@@ -666,7 +656,7 @@
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:18px;">
         <div class="pct-ops-card" style="margin:0;">
-          <h4 style="margin-top:0;color:#003B6F;">2. Pre-Departure & Delivery Photo Evidence</h4>
+          <h4 id="sec-photos" style="margin-top:0;color:#003B6F;">2. Pre-Departure & Delivery Photo Evidence</h4>
           <form id="pctPhotoForm" style="display:flex;flex-direction:column;gap:8px;">
             <select id="photoStage" class="pct-ops-input">
               <option value="Pre-Departure">Pre-Departure Inspection (Warehouse)</option>
@@ -689,7 +679,7 @@
         </div>
 
         <div class="pct-ops-card" style="margin:0;">
-          <h4 style="margin-top:0;color:#003B6F;">3. Customer Handover & Digital Signature</h4>
+          <h4 id="sec-signature" style="margin-top:0;color:#003B6F;">3. Customer Handover & Digital Signature</h4>
           ${o.customer_signature_data ? `
             <div style="background:#F0FDF4;border:1px solid #86EFAC;padding:10px;border-radius:8px;margin-bottom:10px;">
               <strong style="color:#166534;">Signed & Verified by: ${o.customer_signed_name}</strong><br>
@@ -709,7 +699,7 @@
       </div>
 
       <div class="pct-ops-card">
-        <h4 style="margin-top:0;color:#003B6F;">4. Spare Parts, Supplies, Transport & Maintenance Cost Log</h4>
+        <h4 id="sec-expenses" style="margin-top:0;color:#003B6F;">4. Spare Parts, Supplies, Transport & Maintenance Cost Log</h4>
         <form id="pctExpenseForm" style="background:#F8FAFC;padding:12px;border-radius:8px;margin-bottom:12px;">
           <div class="pct-ops-grid">
             <div><label>Resource Category</label>
@@ -851,8 +841,13 @@
       if (!resEx.ok) { const err = await resEx.json().catch(() => ({})); alert(err.error || 'Error logging expense'); return; }
       await loadLookups();
       await loadOrdersTable();
-      await window._pctOpenOrderDetail(orderId);
+      await window._pctOpenOrderDetail(orderId, 'sec-expenses');
     };
+
+    if (focusSection) {
+      const targetEl = document.getElementById(focusSection);
+      if (targetEl) targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   };
 
   window._pctSetOrderStatus = async function (orderId, status) {

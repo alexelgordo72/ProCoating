@@ -12,19 +12,19 @@
     if (!invTable || document.getElementById('pctInvBarcodeBar')) return;
     const bar = document.createElement('div');
     bar.id = 'pctInvBarcodeBar';
-    bar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;background:#F8FAFC;border:1px solid #CBD5E1;border-left:4px solid #003B6F;border-radius:8px;padding:10px 14px;margin:10px 0 14px 0;';
+    bar.className = 'pct-barcode-bar';
     bar.innerHTML = `
-      <div style="display:flex;align-items:center;gap:8px;">
-        <span style="color:#003B6F;display:inline-flex;">${SVG_BARCODE}</span>
+      <div style="display:flex;align-items:center;gap:10px;min-width:220px;flex:1 1 280px;">
+        <span class="pct-barcode-icon" style="display:inline-flex;flex-shrink:0;">${SVG_BARCODE}</span>
         <div>
-          <strong style="color:#003B6F;font-size:0.9rem;">Warehouse Box Barcode Labels (Code 128)</strong>
-          <div style="font-size:0.78rem;color:#64748b;">Print scannable box labels (2×5 per Letter sheet) or scan a barcode into the search box above.</div>
+          <strong class="pct-barcode-title" style="font-size:0.9rem;display:block;">Warehouse Box Barcode Labels (Code 128)</strong>
+          <span class="pct-barcode-sub" style="font-size:0.78rem;display:block;">Print scannable box labels (2×5 per Letter sheet) or scan a barcode into the search box above.</span>
         </div>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <a href="/api/inventory/labels/pdf?scope=new" target="_blank" style="text-decoration:none;padding:6px 12px;border-radius:6px;background:#003B6F;color:#FFFFFF;font-size:0.82rem;font-weight:600;">Print New Warehouse Batch (91)</a>
-        <a href="/api/inventory/labels/pdf?scope=pending" target="_blank" style="text-decoration:none;padding:6px 12px;border-radius:6px;background:#FEF3C7;color:#92400E;border:1px solid #F59E0B;font-size:0.82rem;font-weight:700;">Print Pending Count Labels (23)</a>
-        <a href="/api/inventory/labels/pdf?scope=all" target="_blank" style="text-decoration:none;padding:6px 12px;border-radius:6px;background:#FFFFFF;color:#003B6F;border:1px solid #003B6F;font-size:0.82rem;font-weight:600;">Print Full Catalog</a>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <a href="/api/inventory/labels/pdf?scope=new" target="_blank" style="text-decoration:none;padding:6px 11px;border-radius:6px;background:#003B6F;color:#FFFFFF;font-size:0.8rem;font-weight:600;white-space:nowrap;">Print New Batch (91)</a>
+        <a href="/api/inventory/labels/pdf?scope=pending" target="_blank" style="text-decoration:none;padding:6px 11px;border-radius:6px;background:#FEF3C7;color:#92400E;border:1px solid #F59E0B;font-size:0.8rem;font-weight:700;white-space:nowrap;">Print Pending (23)</a>
+        <a href="/api/inventory/labels/pdf?scope=all" target="_blank" class="pct-barcode-btn-all" style="text-decoration:none;padding:6px 11px;border-radius:6px;font-size:0.8rem;font-weight:600;white-space:nowrap;">Print Full Catalog</a>
       </div>
     `;
     invTable.parentElement.insertBefore(bar, invTable);
