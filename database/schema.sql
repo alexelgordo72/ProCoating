@@ -2,10 +2,10 @@
 -- PostgreSQL database dump
 --
 
-\restrict GDsw9bpJXF0dFHzh3RwUPZVxQyjfgwx4Cc4nhibHEqWrf1FC9MjPrpoB9JTqirb
+\restrict J2cp2Vf0L0L3Hrc10MqgC8oSE2hOqQ7URmhnTa47PYERxEwA8EwKPqmF5zFyChx
 
--- Dumped from database version 18.3
--- Dumped by pg_dump version 18.3
+-- Dumped from database version 18.6
+-- Dumped by pg_dump version 18.6
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -92,6 +92,42 @@ CREATE SEQUENCE public.audit_logs_id_seq
 --
 
 ALTER SEQUENCE public.audit_logs_id_seq OWNED BY public.audit_logs.id;
+
+
+--
+-- Name: customer_contacts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.customer_contacts (
+    id integer NOT NULL,
+    customer_id integer NOT NULL,
+    full_name character varying(150) NOT NULL,
+    phone character varying(60),
+    email character varying(150),
+    "position" character varying(100),
+    is_primary boolean DEFAULT false,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: customer_contacts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.customer_contacts_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: customer_contacts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.customer_contacts_id_seq OWNED BY public.customer_contacts.id;
 
 
 --
@@ -205,6 +241,242 @@ CREATE SEQUENCE public.equipment_id_seq
 --
 
 ALTER SEQUENCE public.equipment_id_seq OWNED BY public.equipment.id;
+
+
+--
+-- Name: equipment_status_history; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.equipment_status_history (
+    id integer NOT NULL,
+    equipment_id integer NOT NULL,
+    previous_status character varying(50),
+    new_status character varying(50) NOT NULL,
+    reference_type character varying(50),
+    reference_id integer,
+    changed_by character varying(80),
+    notes text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: equipment_status_history_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.equipment_status_history_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: equipment_status_history_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.equipment_status_history_id_seq OWNED BY public.equipment_status_history.id;
+
+
+--
+-- Name: internal_order_checklists; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.internal_order_checklists (
+    id integer NOT NULL,
+    order_id integer NOT NULL,
+    item_order integer DEFAULT 1,
+    check_label character varying(200) NOT NULL,
+    pre_departure_ok boolean DEFAULT false,
+    customer_verified_ok boolean DEFAULT false,
+    remarks character varying(255)
+);
+
+
+--
+-- Name: internal_order_checklists_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.internal_order_checklists_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: internal_order_checklists_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.internal_order_checklists_id_seq OWNED BY public.internal_order_checklists.id;
+
+
+--
+-- Name: internal_order_expenses; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.internal_order_expenses (
+    id integer NOT NULL,
+    order_id integer NOT NULL,
+    equipment_id integer,
+    expense_date date DEFAULT CURRENT_DATE,
+    category character varying(50) NOT NULL,
+    maintenance_type character varying(50) DEFAULT 'Initial Deployment'::character varying,
+    spare_part_id integer,
+    employee_id integer,
+    description text NOT NULL,
+    quantity numeric(10,2) DEFAULT 1,
+    internal_unit_cost numeric(12,2) DEFAULT 0,
+    internal_total_cost numeric(12,2) DEFAULT 0,
+    is_billable boolean DEFAULT false,
+    billable_unit_price numeric(12,2) DEFAULT 0,
+    billable_total_price numeric(12,2) DEFAULT 0,
+    notes text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: internal_order_expenses_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.internal_order_expenses_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: internal_order_expenses_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.internal_order_expenses_id_seq OWNED BY public.internal_order_expenses.id;
+
+
+--
+-- Name: internal_order_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.internal_order_items (
+    id integer NOT NULL,
+    order_id integer NOT NULL,
+    category character varying(50) DEFAULT 'Accessory / Supply'::character varying,
+    description text NOT NULL,
+    quantity numeric(10,2) DEFAULT 1,
+    unit character varying(30) DEFAULT 'Unit'::character varying,
+    packed boolean DEFAULT true
+);
+
+
+--
+-- Name: internal_order_items_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.internal_order_items_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: internal_order_items_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.internal_order_items_id_seq OWNED BY public.internal_order_items.id;
+
+
+--
+-- Name: internal_order_photos; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.internal_order_photos (
+    id integer NOT NULL,
+    order_id integer NOT NULL,
+    stage character varying(50) DEFAULT 'Pre-Departure'::character varying,
+    caption character varying(200),
+    file_path character varying(255) NOT NULL,
+    uploaded_by character varying(80),
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: internal_order_photos_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.internal_order_photos_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: internal_order_photos_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.internal_order_photos_id_seq OWNED BY public.internal_order_photos.id;
+
+
+--
+-- Name: internal_orders; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.internal_orders (
+    id integer NOT NULL,
+    order_number character varying(40) NOT NULL,
+    quotation_id integer,
+    customer_id integer NOT NULL,
+    contact_id integer,
+    equipment_id integer,
+    vehicle_id integer,
+    delivered_by_id integer,
+    installed_by_id integer,
+    status character varying(40) DEFAULT 'Staged / Prepared'::character varying,
+    scheduled_delivery date,
+    actual_delivery_at timestamp without time zone,
+    expected_return date,
+    monthly_rate numeric(12,2) DEFAULT 0,
+    site_address text,
+    logistics_notes text,
+    customer_signed_name character varying(150),
+    customer_signature_data text,
+    signed_at timestamp without time zone,
+    created_by character varying(80),
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: internal_orders_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.internal_orders_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: internal_orders_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.internal_orders_id_seq OWNED BY public.internal_orders.id;
 
 
 --
@@ -355,6 +627,87 @@ ALTER SEQUENCE public.purchase_orders_id_seq OWNED BY public.purchase_orders.id;
 
 
 --
+-- Name: quotation_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.quotation_items (
+    id integer NOT NULL,
+    quotation_id integer NOT NULL,
+    item_type character varying(50) DEFAULT 'Equipment Rental'::character varying,
+    equipment_id integer,
+    spare_part_id integer,
+    description text NOT NULL,
+    quantity numeric(10,2) DEFAULT 1,
+    unit_price numeric(12,2) DEFAULT 0,
+    line_total numeric(12,2) DEFAULT 0
+);
+
+
+--
+-- Name: quotation_items_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.quotation_items_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: quotation_items_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.quotation_items_id_seq OWNED BY public.quotation_items.id;
+
+
+--
+-- Name: quotations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.quotations (
+    id integer NOT NULL,
+    quote_number character varying(40) NOT NULL,
+    customer_id integer NOT NULL,
+    contact_id integer,
+    service_type character varying(100) DEFAULT 'Equipment Rental'::character varying,
+    issue_date date DEFAULT CURRENT_DATE,
+    valid_until date,
+    status character varying(30) DEFAULT 'Draft'::character varying,
+    subtotal numeric(12,2) DEFAULT 0,
+    tax_rate numeric(5,2) DEFAULT 0,
+    tax_amount numeric(12,2) DEFAULT 0,
+    total_amount numeric(12,2) DEFAULT 0,
+    payment_terms character varying(120) DEFAULT 'Net 30 Days'::character varying,
+    notes text,
+    created_by character varying(80),
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: quotations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.quotations_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: quotations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.quotations_id_seq OWNED BY public.quotations.id;
+
+
+--
 -- Name: rental_accessories; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -476,7 +829,8 @@ CREATE TABLE public.spare_parts (
     unit_price numeric(10,2) DEFAULT 0,
     last_restocked date,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    supplier_name character varying(200)
+    supplier_name character varying(200),
+    notes text
 );
 
 
@@ -740,6 +1094,13 @@ ALTER TABLE ONLY public.audit_logs ALTER COLUMN id SET DEFAULT nextval('public.a
 
 
 --
+-- Name: customer_contacts id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_contacts ALTER COLUMN id SET DEFAULT nextval('public.customer_contacts_id_seq'::regclass);
+
+
+--
 -- Name: customers id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -758,6 +1119,48 @@ ALTER TABLE ONLY public.employees ALTER COLUMN id SET DEFAULT nextval('public.em
 --
 
 ALTER TABLE ONLY public.equipment ALTER COLUMN id SET DEFAULT nextval('public.equipment_id_seq'::regclass);
+
+
+--
+-- Name: equipment_status_history id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.equipment_status_history ALTER COLUMN id SET DEFAULT nextval('public.equipment_status_history_id_seq'::regclass);
+
+
+--
+-- Name: internal_order_checklists id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_order_checklists ALTER COLUMN id SET DEFAULT nextval('public.internal_order_checklists_id_seq'::regclass);
+
+
+--
+-- Name: internal_order_expenses id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_order_expenses ALTER COLUMN id SET DEFAULT nextval('public.internal_order_expenses_id_seq'::regclass);
+
+
+--
+-- Name: internal_order_items id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_order_items ALTER COLUMN id SET DEFAULT nextval('public.internal_order_items_id_seq'::regclass);
+
+
+--
+-- Name: internal_order_photos id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_order_photos ALTER COLUMN id SET DEFAULT nextval('public.internal_order_photos_id_seq'::regclass);
+
+
+--
+-- Name: internal_orders id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_orders ALTER COLUMN id SET DEFAULT nextval('public.internal_orders_id_seq'::regclass);
 
 
 --
@@ -786,6 +1189,20 @@ ALTER TABLE ONLY public.purchase_order_items ALTER COLUMN id SET DEFAULT nextval
 --
 
 ALTER TABLE ONLY public.purchase_orders ALTER COLUMN id SET DEFAULT nextval('public.purchase_orders_id_seq'::regclass);
+
+
+--
+-- Name: quotation_items id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quotation_items ALTER COLUMN id SET DEFAULT nextval('public.quotation_items_id_seq'::regclass);
+
+
+--
+-- Name: quotations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quotations ALTER COLUMN id SET DEFAULT nextval('public.quotations_id_seq'::regclass);
 
 
 --
@@ -875,6 +1292,14 @@ ALTER TABLE ONLY public.audit_logs
 
 
 --
+-- Name: customer_contacts customer_contacts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_contacts
+    ADD CONSTRAINT customer_contacts_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: customers customers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -896,6 +1321,62 @@ ALTER TABLE ONLY public.employees
 
 ALTER TABLE ONLY public.equipment
     ADD CONSTRAINT equipment_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: equipment_status_history equipment_status_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.equipment_status_history
+    ADD CONSTRAINT equipment_status_history_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: internal_order_checklists internal_order_checklists_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_order_checklists
+    ADD CONSTRAINT internal_order_checklists_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: internal_order_expenses internal_order_expenses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_order_expenses
+    ADD CONSTRAINT internal_order_expenses_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: internal_order_items internal_order_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_order_items
+    ADD CONSTRAINT internal_order_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: internal_order_photos internal_order_photos_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_order_photos
+    ADD CONSTRAINT internal_order_photos_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: internal_orders internal_orders_order_number_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_orders
+    ADD CONSTRAINT internal_orders_order_number_key UNIQUE (order_number);
+
+
+--
+-- Name: internal_orders internal_orders_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_orders
+    ADD CONSTRAINT internal_orders_pkey PRIMARY KEY (id);
 
 
 --
@@ -936,6 +1417,30 @@ ALTER TABLE ONLY public.purchase_orders
 
 ALTER TABLE ONLY public.purchase_orders
     ADD CONSTRAINT purchase_orders_po_number_key UNIQUE (po_number);
+
+
+--
+-- Name: quotation_items quotation_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quotation_items
+    ADD CONSTRAINT quotation_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: quotations quotations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quotations
+    ADD CONSTRAINT quotations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: quotations quotations_quote_number_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quotations
+    ADD CONSTRAINT quotations_quote_number_key UNIQUE (quote_number);
 
 
 --
@@ -1095,11 +1600,138 @@ CREATE INDEX idx_audit_logs_user_id ON public.audit_logs USING btree (user_id);
 
 
 --
+-- Name: idx_customer_contacts_cid; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_customer_contacts_cid ON public.customer_contacts USING btree (customer_id);
+
+
+--
 -- Name: audit_logs audit_logs_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.audit_logs
     ADD CONSTRAINT audit_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
+
+
+--
+-- Name: customer_contacts customer_contacts_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_contacts
+    ADD CONSTRAINT customer_contacts_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id) ON DELETE CASCADE;
+
+
+--
+-- Name: equipment_status_history equipment_status_history_equipment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.equipment_status_history
+    ADD CONSTRAINT equipment_status_history_equipment_id_fkey FOREIGN KEY (equipment_id) REFERENCES public.equipment(id) ON DELETE CASCADE;
+
+
+--
+-- Name: internal_order_checklists internal_order_checklists_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_order_checklists
+    ADD CONSTRAINT internal_order_checklists_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.internal_orders(id) ON DELETE CASCADE;
+
+
+--
+-- Name: internal_order_expenses internal_order_expenses_employee_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_order_expenses
+    ADD CONSTRAINT internal_order_expenses_employee_id_fkey FOREIGN KEY (employee_id) REFERENCES public.employees(id) ON DELETE SET NULL;
+
+
+--
+-- Name: internal_order_expenses internal_order_expenses_equipment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_order_expenses
+    ADD CONSTRAINT internal_order_expenses_equipment_id_fkey FOREIGN KEY (equipment_id) REFERENCES public.equipment(id) ON DELETE SET NULL;
+
+
+--
+-- Name: internal_order_expenses internal_order_expenses_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_order_expenses
+    ADD CONSTRAINT internal_order_expenses_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.internal_orders(id) ON DELETE CASCADE;
+
+
+--
+-- Name: internal_order_expenses internal_order_expenses_spare_part_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_order_expenses
+    ADD CONSTRAINT internal_order_expenses_spare_part_id_fkey FOREIGN KEY (spare_part_id) REFERENCES public.spare_parts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: internal_order_items internal_order_items_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_order_items
+    ADD CONSTRAINT internal_order_items_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.internal_orders(id) ON DELETE CASCADE;
+
+
+--
+-- Name: internal_order_photos internal_order_photos_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_order_photos
+    ADD CONSTRAINT internal_order_photos_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.internal_orders(id) ON DELETE CASCADE;
+
+
+--
+-- Name: internal_orders internal_orders_contact_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_orders
+    ADD CONSTRAINT internal_orders_contact_id_fkey FOREIGN KEY (contact_id) REFERENCES public.customer_contacts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: internal_orders internal_orders_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_orders
+    ADD CONSTRAINT internal_orders_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: internal_orders internal_orders_delivered_by_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_orders
+    ADD CONSTRAINT internal_orders_delivered_by_id_fkey FOREIGN KEY (delivered_by_id) REFERENCES public.employees(id) ON DELETE SET NULL;
+
+
+--
+-- Name: internal_orders internal_orders_equipment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_orders
+    ADD CONSTRAINT internal_orders_equipment_id_fkey FOREIGN KEY (equipment_id) REFERENCES public.equipment(id) ON DELETE SET NULL;
+
+
+--
+-- Name: internal_orders internal_orders_installed_by_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_orders
+    ADD CONSTRAINT internal_orders_installed_by_id_fkey FOREIGN KEY (installed_by_id) REFERENCES public.employees(id) ON DELETE SET NULL;
+
+
+--
+-- Name: internal_orders internal_orders_quotation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.internal_orders
+    ADD CONSTRAINT internal_orders_quotation_id_fkey FOREIGN KEY (quotation_id) REFERENCES public.quotations(id) ON DELETE SET NULL;
 
 
 --
@@ -1148,6 +1780,46 @@ ALTER TABLE ONLY public.purchase_order_items
 
 ALTER TABLE ONLY public.purchase_orders
     ADD CONSTRAINT purchase_orders_supplier_id_fkey FOREIGN KEY (supplier_id) REFERENCES public.suppliers(id);
+
+
+--
+-- Name: quotation_items quotation_items_equipment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quotation_items
+    ADD CONSTRAINT quotation_items_equipment_id_fkey FOREIGN KEY (equipment_id) REFERENCES public.equipment(id) ON DELETE SET NULL;
+
+
+--
+-- Name: quotation_items quotation_items_quotation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quotation_items
+    ADD CONSTRAINT quotation_items_quotation_id_fkey FOREIGN KEY (quotation_id) REFERENCES public.quotations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: quotation_items quotation_items_spare_part_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quotation_items
+    ADD CONSTRAINT quotation_items_spare_part_id_fkey FOREIGN KEY (spare_part_id) REFERENCES public.spare_parts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: quotations quotations_contact_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quotations
+    ADD CONSTRAINT quotations_contact_id_fkey FOREIGN KEY (contact_id) REFERENCES public.customer_contacts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: quotations quotations_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quotations
+    ADD CONSTRAINT quotations_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id) ON DELETE RESTRICT;
 
 
 --
@@ -1250,5 +1922,5 @@ ALTER TABLE ONLY public.work_orders
 -- PostgreSQL database dump complete
 --
 
-\unrestrict GDsw9bpJXF0dFHzh3RwUPZVxQyjfgwx4Cc4nhibHEqWrf1FC9MjPrpoB9JTqirb
+\unrestrict J2cp2Vf0L0L3Hrc10MqgC8oSE2hOqQ7URmhnTa47PYERxEwA8EwKPqmF5zFyChx
 

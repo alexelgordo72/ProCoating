@@ -11,7 +11,7 @@ const { exec } = require('child_process');
 
 const app = express();
 const PORT = 5000;
-const JWT_SECRET = process.env.JWT_SECRET || 'change_this_jwt_secret';
+const JWT_SECRET = 'procoating_secret';
 
 // CORS
 app.use(cors({ origin: (origin, cb) => cb(null, !origin || /^https?:\/\/(192\.168\.80\.10|10\.147\.20\.1|localhost|127\.0\.0\.1|[a-z0-9-]+\.trycloudflare\.com)(:\d+)?$/.test(origin)), credentials: true }));
@@ -32,11 +32,11 @@ if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
 
 // PostgreSQL
 const pool = new Pool({
-    host: process.env.DB_HOST || 'localhost',
+    host: 'localhost',
     port: 5432,
-    user: process.env.DB_USER || 'procoatuser',
-    password: process.env.DB_PASSWORD || 'changeme',
-    database: process.env.DB_NAME || 'procoatingdb',
+    user: 'procoatuser',
+    password: 'Gonda0216*',
+    database: 'procoatingdb',
 });
 
 // ============ HEALTH ============
@@ -610,6 +610,92 @@ app.get('/api/audit-logs/entities', async (req, res) => {
 // ============ STATIC FILES ============
 app.use('/uploads', express.static('uploads'));
 app.use(express.static('/var/www/procoating'));
+
+
+// === MULTI-CONTACT MANAGEMENT PER CUSTOMER ===
+app.get('/api/customers/:id/contacts', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT * FROM customer_contacts WHERE customer_id = $1 ORDER BY is_primary DESC, id ASC',
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/customers/:id/contacts', async (req, res) => {
+  const customerId = req.params.id;
+  const { full_name, phone, email, position, is_primary } = req.body;
+  if (!full_name || !full_name.trim()) {
+    return res.status(400).json({ error: 'El nombre del contacto es obligatorio' });
+  }
+  try {
+    const countRes = await pool.query('SELECT COUNT(*)::int AS total FROM customer_contacts WHERE customer_id = $1', [customerId]);
+    const makePrimary = Boolean(is_primary) || countRes.rows[0].total === 0;
+    if (makePrimary) {
+      await pool.query('UPDATE customer_contacts SET is_primary = FALSE WHERE customer_id = $1', [customerId]);
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO customer_contacts (customer_id, full_name, phone, email, position, is_primary)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [customerId, full_name.trim(), phone || null, email || null, position || null, makePrimary]
+    );
+    if (makePrimary) {
+      await pool.query(
+        'UPDATE customers SET contact_person = $1, phone = COALESCE($2, phone), email = COALESCE($3, email) WHERE id = $4',
+        [full_name.trim(), phone || null, email || null, customerId]
+      );
+    }
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/customer-contacts/:contactId', async (req, res) => {
+  const { full_name, phone, email, position, is_primary } = req.body;
+  if (!full_name || !full_name.trim()) {
+    return res.status(400).json({ error: 'El nombre del contacto es obligatorio' });
+  }
+  try {
+    const existing = await pool.query('SELECT customer_id FROM customer_contacts WHERE id = $1', [req.params.contactId]);
+    if (!existing.rows.length) return res.status(404).json({ error: 'Contacto no encontrado' });
+    const customerId = existing.rows[0].customer_id;
+    if (is_primary) {
+      await pool.query('UPDATE customer_contacts SET is_primary = FALSE WHERE customer_id = $1', [customerId]);
+    }
+    const { rows } = await pool.query(
+      `UPDATE customer_contacts
+       SET full_name = $1, phone = $2, email = $3, position = $4, is_primary = COALESCE($5, is_primary)
+       WHERE id = $6 RETURNING *`,
+      [full_name.trim(), phone || null, email || null, position || null, is_primary, req.params.contactId]
+    );
+    if (rows[0].is_primary) {
+      await pool.query(
+        'UPDATE customers SET contact_person = $1, phone = COALESCE($2, phone), email = COALESCE($3, email) WHERE id = $4',
+        [full_name.trim(), phone || null, email || null, customerId]
+      );
+    }
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/customer-contacts/:contactId', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM customer_contacts WHERE id = $1', [req.params.contactId]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+const registerOperationsRoutes = require('./operations-routes');
+registerOperationsRoutes(app, pool, null);
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
