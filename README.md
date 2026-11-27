@@ -3,11 +3,11 @@
 > **Enterprise Operations, Equipment Rental, Fleet Traceability, Maintenance Costing, User RBAC, Audit Logging & Automated Disaster Recovery Platform**  
 > Built and deployed for **PRO-Coating Treatments Inc.**
 
-[![Backend](https://img.shields.io/badge/Backend-Node.js%20%2B%20Express-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
-[![Database](https://img.shields.io/badge/Database-PostgreSQL%2015%2F16-336791?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Server](https://img.shields.io/badge/Server-Fedora%20%2B%20Nginx%20%2B%20PM2-009639?style=flat-square&logo=nginx&logoColor=white)](https://nginx.org/)
-[![Backup](https://img.shields.io/badge/Backup-Google%20Drive%20(rclone)-4285F4?style=flat-square&logo=googledrive&logoColor=white)](https://rclone.org/)
-[![UI Theme](https://img.shields.io/badge/UI-Light%20%26%20Dark%20Mode-0F172A?style=flat-square)](#)
+[![Backend](https://img.shields.io/static/v1?label=Backend&message=Node.js+%2B+Express&color=339933&style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![Database](https://img.shields.io/static/v1?label=Database&message=PostgreSQL+15+%2F+16&color=336791&style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Server](https://img.shields.io/static/v1?label=Server&message=Fedora+%2B+Nginx+%2B+PM2&color=009639&style=flat-square&logo=fedora&logoColor=white)](https://nginx.org/)
+[![Backup](https://img.shields.io/static/v1?label=Backup&message=Google+Drive+rclone&color=4285F4&style=flat-square&logo=googledrive&logoColor=white)](https://rclone.org/)
+[![UI Theme](https://img.shields.io/static/v1?label=UI+Theme&message=Light+%26+Dark+Mode&color=0F172A&style=flat-square&logo=github&logoColor=white)](#)
 
 ---
 
