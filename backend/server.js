@@ -17,6 +17,11 @@ const JWT_SECRET = 'procoating_secret';
 app.use(cors({ origin: (origin, cb) => cb(null, !origin || /^https?:\/\/(192\.168\.80\.10|10\.147\.20\.1|localhost|127\.0\.0\.1|[a-z0-9-]+\.trycloudflare\.com)(:\d+)?$/.test(origin)), credentials: true }));
 app.use(cookieParser());
 app.use(express.json());
+const registerActivityLogger = require('./activity-logger');
+registerActivityLogger(app, () => pool);
+const { registerAutoRentalHook } = require('./auto-rental');
+registerAutoRentalHook(app, () => pool);
+
 
 // Multer para archivos
 const storage = multer.diskStorage({
