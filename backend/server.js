@@ -10,6 +10,7 @@ const fs = require('fs');
 const { exec } = require('child_process');
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = 5000;
 const JWT_SECRET = 'procoating_secret';
 
